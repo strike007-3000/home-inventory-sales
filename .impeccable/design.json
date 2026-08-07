@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-07T00:00:00+02:00",
+  "title": "Design System: Home Inventory",
+  "extensions": {
+    "colorMeta": {
+      "action-blue": { "role": "primary", "displayName": "Clear Action Blue", "canonical": "#1468e8", "tonalRamp": ["oklch(20% 0.10 255)", "oklch(30% 0.14 255)", "oklch(40% 0.18 255)", "#0e56c3", "#1468e8", "oklch(70% 0.14 255)", "#eaf2ff", "oklch(95% 0.025 255)"] },
+      "canvas-cool-grey": { "role": "neutral", "displayName": "Cool Canvas", "canonical": "#f6f7f9", "tonalRamp": ["#17191d", "#34383f", "#646a73", "#888f98", "#aeb4bc", "#d2d7de", "#e3e6ea", "#f6f7f9"] },
+      "surface-white": { "role": "neutral", "displayName": "Counter White", "canonical": "#ffffff", "tonalRamp": ["#17191d", "#34383f", "#646a73", "#aeb4bc", "#d2d7de", "#e3e6ea", "#f9fafb", "#ffffff"] },
+      "success-green": { "role": "status", "displayName": "Success Green", "canonical": "#147a52", "tonalRamp": ["oklch(18% 0.06 155)", "oklch(28% 0.09 155)", "#147a52", "oklch(55% 0.11 155)", "oklch(68% 0.09 155)", "oklch(80% 0.06 155)", "#e9f7f1", "oklch(96% 0.02 155)"] },
+      "warning-amber": { "role": "status", "displayName": "Warning Amber", "canonical": "#946200", "tonalRamp": ["oklch(18% 0.05 80)", "oklch(28% 0.08 80)", "#946200", "oklch(58% 0.12 80)", "oklch(70% 0.10 80)", "oklch(82% 0.07 80)", "#fff5d9", "oklch(96% 0.025 80)"] },
+      "danger-red": { "role": "status", "displayName": "Danger Red", "canonical": "#b42318", "tonalRamp": ["oklch(18% 0.08 28)", "oklch(28% 0.12 28)", "#b42318", "oklch(58% 0.18 28)", "oklch(70% 0.13 28)", "oklch(82% 0.08 28)", "#fff0ee", "oklch(96% 0.025 28)"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Page Headline", "purpose": "Page and result titles." },
+      "title": { "displayName": "Section Title", "purpose": "Section headings and strong card labels." },
+      "body": { "displayName": "Working Body", "purpose": "Primary reading, values, and field content." },
+      "label": { "displayName": "Control Label", "purpose": "Buttons and labels above controls." }
+    },
+    "shadows": [
+      { "name": "focus-halo", "value": "0 0 0 3px rgba(20, 104, 232, 0.12)", "purpose": "Interaction feedback on focused fields; not surface elevation." }
+    ],
+    "motion": [
+      { "name": "control-state", "value": "160ms ease", "purpose": "Short feedback for button, card, and border state changes; effectively removed for reduced motion." }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "700px" },
+      { "name": "desktop-rail", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single strong action for starting or completing the current routine task.",
+      "html": "<button class=\"ds-btn-primary\" type=\"button\">Record a sale</button>",
+      "css": ".ds-btn-primary { min-height: 48px; padding: 11px 18px; border: 1px solid transparent; border-radius: 10px; background: var(--blue, #1468e8); color: #fff; font: 700 16px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; cursor: pointer; transition: background-color .16s ease, transform .16s ease; } .ds-btn-primary:hover { background: var(--blue-dark, #0e56c3); transform: translateY(-1px); } .ds-btn-primary:active { transform: translateY(0); } .ds-btn-primary:focus-visible { outline: 3px solid rgba(20,104,232,.32); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A bounded alternative action that does not compete with the primary button.",
+      "html": "<button class=\"ds-btn-secondary\" type=\"button\">Update stock</button>",
+      "css": ".ds-btn-secondary { min-height: 48px; padding: 11px 18px; border: 1px solid var(--line-strong, #d2d7de); border-radius: 10px; background: var(--surface, #fff); color: var(--ink, #17191d); font: 700 16px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; cursor: pointer; transition: background-color .16s ease, transform .16s ease; } .ds-btn-secondary:hover { background: var(--surface-subtle, #f9fafb); transform: translateY(-1px); } .ds-btn-secondary:active { transform: translateY(0); } .ds-btn-secondary:focus-visible { outline: 3px solid rgba(20,104,232,.32); outline-offset: 2px; }"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A clear search control for products or SKU, with a simple inline line icon.",
+      "html": "<label class=\"ds-search\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.35-4.35\"/></svg><input type=\"search\" placeholder=\"Search products or SKU\" aria-label=\"Search products or SKU\"></label>",
+      "css": ".ds-search { position: relative; display: block; width: 100%; max-width: 520px; } .ds-search svg { position: absolute; left: 14px; top: 50%; width: 20px; height: 20px; color: var(--muted, #646a73); transform: translateY(-50%); pointer-events: none; } .ds-search input { width: 100%; min-height: 48px; padding: 11px 13px 11px 44px; border: 1px solid var(--line-strong, #d2d7de); border-radius: 10px; background: var(--surface, #fff); color: var(--ink, #17191d); font: 16px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; } .ds-search input:focus { outline: none; border-color: var(--blue, #1468e8); box-shadow: 0 0 0 3px rgba(20,104,232,.12); } .ds-search input:focus-visible { outline: 3px solid rgba(20,104,232,.32); outline-offset: 2px; }"
+    },
+    {
+      "name": "Product Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "A bordered working container that keeps product identity, price, availability, and task controls together.",
+      "html": "<article class=\"ds-product-card\"><div><h3>Classic Bowl Set</h3><code>BW-104</code></div><strong>₹850</strong><span>12 in stock</span></article>",
+      "css": ".ds-product-card { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px 16px; padding: 17px 18px; border: 1px solid var(--line, #e3e6ea); border-radius: 12px; background: var(--surface, #fff); color: var(--ink, #17191d); font: 16px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; } .ds-product-card h3 { margin: 0; font-size: 16px; line-height: 1.35; } .ds-product-card code { color: var(--muted, #646a73); font-size: 13px; } .ds-product-card span { color: var(--muted, #646a73); font-size: 14px; } .ds-product-card:focus-within { border-color: var(--blue, #1468e8); }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Compact semantic status for inventory conditions; never a decorative tag.",
+      "html": "<span class=\"ds-status-chip\">Out of stock</span>",
+      "css": ".ds-status-chip { display: inline-flex; min-height: 26px; align-items: center; padding: 3px 9px; border-radius: 999px; background: var(--red-soft, #fff0ee); color: var(--red, #b42318); font: 700 12.5px/1.4 Inter, ui-sans-serif, system-ui, sans-serif; }"
+    },
+    {
+      "name": "Quantity Stepper",
+      "kind": "custom",
+      "description": "A connected, thumb-sized stock or sale quantity control with an easy-to-scan tabular value.",
+      "html": "<div class=\"ds-stepper\" aria-label=\"Quantity\"><button type=\"button\" aria-label=\"Decrease quantity\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M5 12h14\"/></svg></button><span>2</span><button type=\"button\" aria-label=\"Increase quantity\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg></button></div>",
+      "css": ".ds-stepper { display: grid; grid-template-columns: 48px minmax(48px,64px) 48px; width: max-content; overflow: hidden; border: 1px solid var(--line-strong, #d2d7de); border-radius: 10px; background: var(--surface, #fff); } .ds-stepper button { width: 48px; height: 48px; padding: 0; border: 0; background: var(--surface-subtle, #f9fafb); color: var(--blue, #1468e8); cursor: pointer; } .ds-stepper button:hover { background: var(--blue-soft, #eaf2ff); } .ds-stepper button:focus-visible { outline: 3px solid rgba(20,104,232,.32); outline-offset: -3px; } .ds-stepper svg { width: 20px; height: 20px; } .ds-stepper span { display: grid; place-items: center; font: 750 17px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Primary Navigation",
+      "kind": "nav",
+      "description": "Persistent labeled navigation: bottom bar on phones and a quiet left rail on desktop.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main navigation\"><button class=\"ds-nav-active\" type=\"button\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/><path d=\"M9 22V12h6v10\"/></svg><span>Home</span></button><button type=\"button\"><span>Sell</span></button><button type=\"button\"><span>Products</span></button><button type=\"button\"><span>Stock</span></button></nav>",
+      "css": ".ds-nav { display: grid; grid-template-columns: repeat(4,1fr); height: 72px; border-top: 1px solid var(--line, #e3e6ea); background: var(--surface, #fff); } .ds-nav button { position: relative; min-height: 48px; padding: 8px 4px 6px; border: 0; background: transparent; color: #777e88; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: 600 12px/1.2 Inter, ui-sans-serif, system-ui, sans-serif; cursor: pointer; } .ds-nav button:hover { background: var(--surface-subtle, #f9fafb); } .ds-nav button:focus-visible { outline: 3px solid rgba(20,104,232,.32); outline-offset: -3px; } .ds-nav .ds-nav-active { color: var(--blue, #1468e8); } .ds-nav .ds-nav-active::before { content: ''; position: absolute; top: 0; width: 28px; height: 3px; border-radius: 0 0 3px 3px; background: var(--blue, #1468e8); } .ds-nav svg { width: 23px; height: 23px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Clear Counter",
+    "overview": "Home Inventory should feel like a clear, well-kept counter where one routine job is easy to see and finish. It is a calm working surface, not a decorative dashboard: white and cool-grey layers, dark ink, hairline dividers, consistent line icons, and generous breathing room keep attention on sales and stock.\n\nThe interface uses familiar app conventions without generic SaaS chrome. Plain labels, reachable primary actions, and stable navigation let older, nontechnical users move confidently between Home, Sell, Products, and Stock. Information density stays moderate; operational detail appears when the task needs it, not as decoration.",
+    "keyCharacteristics": ["Light, quiet surfaces with crisp ink hierarchy.", "One strong blue reserved for actions, selection, focus, and active navigation.", "Familiar boxed Home summaries, with lists and bordered cards for operational content.", "Simple 2px line icons paired with text for primary actions.", "Responsive bottom navigation on phones and a persistent rail on desktop.", "Minimum 48px standard controls, visible focus, and plain nontechnical language."],
+    "rules": [
+      { "name": "The One Blue Rule", "body": "Blue is the sole general-purpose accent. Green, amber, and red communicate status only; they never compete for routine action hierarchy.", "section": "colors" },
+      { "name": "The White Is a Surface Rule", "body": "The cool canvas frames the application; white marks an interactive or contained working surface rather than becoming an ornamental tile mosaic.", "section": "colors" },
+      { "name": "The Plain Voice Rule", "body": "Prefer short, familiar words and sentence case. Do not introduce warehouse, accounting, or software terminology when home-business language is available.", "section": "typography" },
+      { "name": "The Reachable Action Rule", "body": "The primary completion action stays visible near the user's thumb on phones and at the working edge of the desktop canvas.", "section": "layout" },
+      { "name": "The Familiar Home Exception", "body": "Keep the current boxed Today and Stock alerts summaries on Home. They are an intentionally familiar overview pattern, not permission to turn other screens into dashboard grids.", "section": "layout" },
+      { "name": "The Hairline Before Shadow Rule", "body": "Use a divider, border, or tonal shift to separate working regions. Do not add drop shadows to cards or navigation simply to make them feel more prominent.", "section": "elevation" }
+    ],
+    "dos": ["Do make the next routine action unmistakable with one blue primary control.", "Do retain the familiar boxed Home summaries for Today and Stock alerts.", "Do use bordered cards for contained tasks and hairline-divided rows for scan-heavy lists.", "Do pair simple line icons with text for navigation and primary actions.", "Do preserve at least 48px standard touch targets, 16px primary text, visible focus, and keyboard access.", "Do adapt navigation and action placement deliberately at phone, tablet, and desktop sizes."],
+    "donts": ["Don't introduce decorative dashboards, metric mosaics, gradients, glass effects, or generic SaaS chrome.", "Don't add a second general-purpose accent colour; semantic colours are for status only.", "Don't use shadows when a hairline divider or tonal surface already explains the structure.", "Don't hide a primary action behind an unlabeled icon, hover state, or distant menu.", "Don't stretch mobile compositions across desktop widths; use the rail and task-oriented responsive rows.", "Don't replace plain home-business language with retail, warehouse, or accounting jargon."]
+  }
+}

@@ -7,7 +7,8 @@ coverage/
 .vite/
 .wrangler/
 .claude/
-.impeccable/
+.impeccable/*
+!.impeccable/design.json
 .dev.vars
 playwright-report/
 test-results/
