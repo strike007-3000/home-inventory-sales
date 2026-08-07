@@ -1,0 +1,25 @@
+{
+  "name": "home-inventory-sales",
+  "version": "0.0.1",
+  "description": "A lightweight inventory and sales tracker for home businesses.",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run build && npm test"
+  },
+  "dependencies": {
+    "preact": "^10.22.1"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.9.0",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.0",
+    "vitest": "^2.0.4"
+  }
+}
