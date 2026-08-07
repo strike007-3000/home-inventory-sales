@@ -39,7 +39,6 @@ import {
   SellIcon,
   StockIcon,
   ProductsIcon,
-  MoreIcon,
   SearchIcon,
   CheckIcon,
   PackageIcon,
@@ -64,8 +63,7 @@ type Route =
   | 'sale-completed'
   | 'view-sale'
   | 'cancel-sale-confirm'
-  | 'products'
-  | 'more';
+  | 'products';
 
 // ============================================================================
 // Navigation Component
@@ -80,20 +78,27 @@ function Nav({ currentRoute, onNavigate }: NavProps) {
   const navItems: { route: Route; label: string; Icon: () => JSX.Element }[] = [
     { route: 'home', label: 'Home', Icon: HomeIcon },
     { route: 'sell', label: 'Sell', Icon: SellIcon },
-    { route: 'stock', label: 'Stock', Icon: StockIcon },
     { route: 'products', label: 'Products', Icon: ProductsIcon },
-    { route: 'more', label: 'More', Icon: MoreIcon },
+    { route: 'stock', label: 'Stock', Icon: StockIcon },
   ];
+  const activeRoute: Route = ['review-sale', 'sale-completed'].includes(currentRoute)
+    ? 'sell'
+    : ['stock-arrived', 'count-stock', 'fix-stock'].includes(currentRoute)
+      ? 'stock'
+      : currentRoute;
 
   return (
     <nav class="nav" role="navigation" aria-label="Main navigation">
+      <div class="nav-brand" aria-label="Home Inventory">
+        <span>Home Inventory</span>
+      </div>
       <div class="nav-inner">
         {navItems.map(({ route, label, Icon }) => (
           <button
             key={route}
-            class={`nav-item ${currentRoute === route ? 'active' : ''}`}
+            class={`nav-item ${activeRoute === route ? 'active' : ''}`}
             onClick={() => onNavigate(route)}
-            aria-current={currentRoute === route ? 'page' : undefined}
+            aria-current={activeRoute === route ? 'page' : undefined}
             type="button"
           >
             <span class="nav-icon" aria-hidden="true">
@@ -131,14 +136,16 @@ function HomeScreen({ state, onNavigate, onReset }: HomeScreenProps) {
   return (
     <div class="screen">
       <div class="main no-sticky-action">
-        {/* Record a sale button */}
-        <button
-          class="btn btn-primary btn-lg mb-6"
-          onClick={() => onNavigate('sell')}
-          type="button"
-        >
-          Record a sale
-        </button>
+        <div class="page-header">
+          <h1 class="text-2xl font-semibold">Home</h1>
+          <button
+            class="btn btn-primary btn-lg"
+            onClick={() => onNavigate('sell')}
+            type="button"
+          >
+            Record a sale
+          </button>
+        </div>
 
         {/* Today's sales */}
         <section class="mb-4">
@@ -154,13 +161,13 @@ function HomeScreen({ state, onNavigate, onReset }: HomeScreenProps) {
         {/* Stock alerts */}
         <section class="mb-4">
           <h2 class="text-lg font-semibold mb-3">Stock alerts</h2>
-          <div class="flex gap-3">
+          <div class="home-alerts">
             <button
               class="card card-clickable flex-1"
               onClick={() => onNavigate('products')}
               type="button"
             >
-              <div class="summary-value text-marigold">{lowStock.length}</div>
+              <div class="summary-value">{lowStock.length}</div>
               <div class="summary-label">Low stock</div>
             </button>
             <button
@@ -168,7 +175,7 @@ function HomeScreen({ state, onNavigate, onReset }: HomeScreenProps) {
               onClick={() => onNavigate('products')}
               type="button"
             >
-              <div class="summary-value text-error">{outOfStock.length}</div>
+              <div class="summary-value">{outOfStock.length}</div>
               <div class="summary-label">Out of stock</div>
             </button>
           </div>
@@ -225,6 +232,7 @@ function ProductCard({
   showAfterQuantity,
 }: ProductCardProps) {
   const isOutOfStock = product.quantity === 0;
+  const isSaleQuantity = maxQuantity !== undefined;
   const isAtMax = maxQuantity !== undefined && quantityInDraft >= maxQuantity;
 
   const handleDecrease = () => {
@@ -234,13 +242,13 @@ function ProductCard({
   };
 
   const handleIncrease = () => {
-    if (!isOutOfStock && !isAtMax) {
+    if ((!isSaleQuantity || !isOutOfStock) && !isAtMax) {
       onQuantityChange(quantityInDraft + 1);
     }
   };
 
   return (
-    <div class="card">
+    <div class="card product-card">
       <div class="card-header">
         <div>
           <h3 class="card-title">{product.name}</h3>
@@ -272,7 +280,7 @@ function ProductCard({
         <button
           class="quantity-btn"
           onClick={handleIncrease}
-          disabled={isOutOfStock || isAtMax}
+          disabled={(isSaleQuantity && isOutOfStock) || isAtMax}
           type="button"
           aria-label={`Increase ${product.name} quantity`}
         >
@@ -706,7 +714,7 @@ function StockArrivedScreen({ state, onRestockDraftChange, onStateChange }: Stoc
 
         {filteredProducts.length === 0 ? (
           <div class="empty-state">
-            <div class="empty-state-icon">🔍</div>
+            <div class="empty-state-icon"><SearchIcon /></div>
             <h3 class="empty-state-title">No products found</h3>
           </div>
         ) : (
@@ -1303,34 +1311,45 @@ function CancelSaleConfirmScreen({
 // Products Placeholder Screen
 // ============================================================================
 
-function ProductsPlaceholderScreen() {
-  return (
-    <div class="screen">
-      <div class="main no-sticky-action">
-        <div class="result-screen">
-          <h1 class="result-title">Products</h1>
-          <p class="result-message">
-            Product management will be available after the pilot phase.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+interface ProductsScreenProps {
+  state: InventoryState;
+  onNavigate: (route: Route) => void;
 }
 
-// ============================================================================
-// More Placeholder Screen
-// ============================================================================
+function ProductsScreen({ state, onNavigate }: ProductsScreenProps) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const products = useMemo(
+    () => searchProducts(state.products, searchQuery),
+    [state.products, searchQuery],
+  );
 
-function MorePlaceholderScreen() {
   return (
     <div class="screen">
       <div class="main no-sticky-action">
-        <div class="result-screen">
-          <h1 class="result-title">More</h1>
-          <p class="result-message">
-            Additional settings and tools will be available after the pilot phase.
-          </p>
+        <div class="page-header">
+          <h1 class="text-2xl font-semibold">Products</h1>
+          <button class="btn btn-secondary" onClick={() => onNavigate('stock')} type="button">Update stock</button>
+        </div>
+        <div class="search-input">
+          <SearchIcon />
+          <input class="form-input" type="search" placeholder="Search products or SKU" value={searchQuery} onInput={(event) => setSearchQuery((event.target as HTMLInputElement).value)} aria-label="Search products or SKU" />
+        </div>
+        <div class="product-list" aria-live="polite">
+          {products.map((product) => (
+            <div class="list-item product-list-row" key={product.id}>
+              <div>
+                <div class="font-semibold">{product.name}</div>
+                {product.sku && <div class="text-sm text-ink-light code">{product.sku}</div>}
+              </div>
+              <div class="product-list-meta">
+                <span class="font-semibold">{formatInr(product.pricePaise)}</span>
+                <span class={product.quantity === 0 ? 'text-error' : product.quantity <= product.lowStockLevel ? 'text-marigold' : 'text-ink-light'}>
+                  {product.quantity === 0 ? 'Out of stock' : `${product.quantity} in stock`}
+                </span>
+              </div>
+            </div>
+          ))}
+          {products.length === 0 && <div class="empty-state"><h2 class="empty-state-title">No products found</h2><p class="empty-state-message">Try another name or SKU.</p></div>}
         </div>
       </div>
     </div>
@@ -1406,9 +1425,7 @@ export function App() {
       case 'cancel-sale-confirm':
         return <CancelSaleConfirmScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
       case 'products':
-        return <ProductsPlaceholderScreen />;
-      case 'more':
-        return <MorePlaceholderScreen />;
+        return <ProductsScreen state={state} onNavigate={handleNavigate} />;
       default:
         return <HomeScreen state={state} onNavigate={handleNavigate} onReset={handleReset} />;
     }
