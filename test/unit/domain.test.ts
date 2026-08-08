@@ -23,8 +23,8 @@ import {
   validateQuantity,
   type SaleDraft,
   type RestockLine,
-} from '../src/domain';
-import { createInitialState, PRODUCT_IDS } from '../src/seed';
+} from '../../src/domain';
+import { createInitialState, PRODUCT_IDS } from '../../src/seed';
 
 describe('formatInr', () => {
   it('formats whole rupees without decimal', () => {
