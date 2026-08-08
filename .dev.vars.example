@@ -1,0 +1,8 @@
+# Copy this to .dev.vars and fill in values.
+# Generate PASSWORD_HASH securely: node scripts/generate-password-hash.mjs
+# Passing a password argument is only for disposable local test credentials.
+# Generate SESSION_SECRET: openssl rand -hex 32
+
+PASSWORD_HASH=pbkdf2$sha256$210000$<salt>$<derived>
+SESSION_SECRET=0000000000000000000000000000000000000000000000000000000000000000
+ALLOWED_ORIGINS=http://localhost:5173

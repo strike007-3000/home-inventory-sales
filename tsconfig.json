@@ -21,6 +21,7 @@
     "noImplicitReturns": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["src", "test"],
+  "include": ["src", "shared", "test/unit"],
+  "exclude": ["test/worker"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "home-inventory",
+  "main": "server/index.ts",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "home-inventory-db",
+      "database_id": "<fill after wrangler d1 create>",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "ALLOWED_ORIGINS": "http://localhost:5173",
+    "DB_NAME": "home-inventory-db",
+    "SESSION_MAX_AGE_SECONDS": "2592000"
+  }
+}

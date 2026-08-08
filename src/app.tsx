@@ -1,7 +1,7 @@
 // Main application shell with navigation and routing.
 // Part 1: Imports, types, and app shell.
 
-import { useState, useCallback, useMemo } from 'preact/hooks';
+import { useState, useCallback, useMemo, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import {
   InventoryState,
@@ -50,6 +50,7 @@ import {
   ChevronLeftIcon,
 } from './icons';
 import './styles.css';
+import { LoginScreen } from './screens/login';
 
 // Route type
 type Route =
@@ -1365,6 +1366,26 @@ export function App() {
   const [route, setRoute] = useState<Route>('home');
   const [lastCompletedSaleId, setLastCompletedSaleId] = useState<number>(0);
   const [activeSaleIdempotencyKey, setActiveSaleIdempotencyKey] = useState<string>(() => crypto.randomUUID());
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+
+  // Auth gate: check session on mount
+  useEffect(() => {
+    fetch('/api/me', { credentials: 'same-origin' })
+      .then((r) => {
+        setSignedIn(r.ok);
+        if (!r.ok) {
+          window.scrollTo(0, 0);
+        }
+      })
+      .catch(() => setSignedIn(false));
+  }, []);
+
+  // Listen for 401 events from api.ts
+  useEffect(() => {
+    const handler = () => setSignedIn(false);
+    window.addEventListener('api:signed-out', handler);
+    return () => window.removeEventListener('api:signed-out', handler);
+  }, []);
 
   const handleNavigate = useCallback((newRoute: Route) => {
     setRoute(newRoute);
@@ -1433,6 +1454,29 @@ export function App() {
 
   // Determine if we should show the nav (hide on some screens)
   const showNav = !['sale-completed', 'view-sale', 'cancel-sale-confirm'].includes(route);
+
+  // Auth gate
+  if (signedIn === null) {
+    return (
+      <div class="app">
+        <div class="screen">
+          <div class="main no-sticky-action">
+            <div style={{ textAlign: 'center', paddingTop: '20vh' }}>
+              <p class="text-ink-light">Loading...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!signedIn) {
+    return (
+      <div class="app">
+        <LoginScreen onLogin={() => setSignedIn(true)} />
+      </div>
+    );
+  }
 
   return (
     <div class="app">
