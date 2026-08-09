@@ -1,8 +1,8 @@
-// Seed data for the Phase 0 prototype.
-// 18 representative products covering all test scenarios.
+// Synthetic inventory used only by unit tests.
+// These records are not loaded by the application or deployed to Cloudflare.
 
-import type { Product, ProductId, InventoryState } from './domain';
-import { EMPTY_SALE_DRAFT } from './domain';
+import type { Product, ProductId, InventoryState } from '../../src/domain';
+import { EMPTY_SALE_DRAFT } from '../../src/domain';
 
 // Deterministic product IDs for stable testing
 export const PRODUCT_IDS = {

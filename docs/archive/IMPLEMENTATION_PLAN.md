@@ -1,5 +1,7 @@
 # Phase 1 M2 Implementation Plan
 
+> Archived milestone plan. The CSV import screen described here was intentionally removed.
+
 ## Baseline Verification (Complete ✓)
 
 **Repository:** `/Users/shrey/Code/Inventory`

@@ -1,5 +1,7 @@
 # Safari M1 Local-Browser Session Persistence Fix - Retest Guide
 
+> Archived authentication retest record. Current security and test guidance lives in `../SECURITY.md` and `../CONTRIBUTING.md`.
+
 ## Summary of Changes
 
 This fix addresses the issue where Safari on M1 MacBook Pro rejected HTTP cookies with the `Secure` flag, causing session persistence failures.

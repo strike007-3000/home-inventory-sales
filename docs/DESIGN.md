@@ -91,6 +91,8 @@ components:
 
 # Design System: Home Inventory
 
+> Current design reference for the hosted application. Historical prototype language elsewhere in this file describes the visual origin, not the runtime or data architecture.
+
 ## Overview
 
 **Creative North Star: "The Clear Counter"**

@@ -1,5 +1,7 @@
 # Planning Delivery Summary
 
+> Archived planning record. Not current implementation or operating guidance.
+
 ## Outcome
 
 The plan now describes a small hosted inventory and sales application for one or two parents using phones and iPads. Stock management is a primary daily workflow alongside sales, not an advanced admin feature.

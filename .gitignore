@@ -6,6 +6,9 @@ coverage/
 # Local tooling
 .vite/
 .wrangler/
+.pnpm-store/
+.private/
+graphify-out/
 .claude/
 .impeccable/*
 !.impeccable/design.json
