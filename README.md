@@ -2,8 +2,6 @@
 
 A private, touch-friendly inventory and sales application for a small home business. It runs as one Cloudflare Worker, serves a Preact interface, and stores production records in Cloudflare D1.
 
-Live application: <https://home-inventory.shreyasgore.workers.dev>
-
 ## Current capabilities
 
 - Inventory catalogue with colour, optional size, QTY, Stock/set count, MRP, SRP/SP, consultant price, location, and self-use indication
