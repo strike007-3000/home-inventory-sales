@@ -210,9 +210,14 @@ export function createCsrfCookie(request: Request): string {
 export function verifyCsrf(request: Request): boolean {
   const token = request.headers.get('X-CSRF-Token');
   const cookieName = getCsrfCookieName(request);
-  const cookie = parseCookies(request).get(cookieName);
-  if (!token || !cookie) return false;
-  return constantTimeCompare(new TextEncoder().encode(token), new TextEncoder().encode(cookie));
+  const cookies = parseCookies(request);
+  const cookie = cookies.get(cookieName);
+
+  if (!token || !cookie) {
+    return false;
+  }
+  const match = constantTimeCompare(new TextEncoder().encode(token), new TextEncoder().encode(cookie));
+  return match;
 }
 
 export function clearSessionCookies(request: Request): string[] {
@@ -316,10 +321,16 @@ export async function checkRateLimit(
 function parseCookies(request: Request): Map<string, string> {
   const cookies = new Map<string, string>();
   const header = request.headers.get('Cookie') ?? '';
+
   for (const pair of header.split(';')) {
-    const [key, ...rest] = pair.split('=');
-    if (key) cookies.set(key.trim(), rest.join('=').trim());
+    const equalsIndex = pair.indexOf('=');
+    if (equalsIndex >= 0) {
+      const key = pair.slice(0, equalsIndex).trim();
+      const value = pair.slice(equalsIndex + 1).trim();
+      cookies.set(key, value);
+    }
   }
+
   return cookies;
 }
 
@@ -341,14 +352,26 @@ export async function requireAuth(
   request: Request,
   env: Env,
 ): Promise<Response | null> {
+  const sessionName = getSessionCookieName(request);
+  const cookie = parseCookies(request).get(sessionName);
+
+  if (!cookie) {
+    return new Response(JSON.stringify({ error: 'Not authenticated' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const maxAge = parseInt(env.SESSION_MAX_AGE_SECONDS, 10) || 2592000;
   const valid = await verifySession(request, env.SESSION_SECRET, maxAge);
+
   if (!valid) {
     return new Response(JSON.stringify({ error: 'Not authenticated' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' },
     });
   }
+
   return null;
 }
 

@@ -56,8 +56,9 @@ export function getQueryParam(url: URL, name: string, fallback: string = ''): st
 export function getQueryInt(url: URL, name: string, fallback: number): number {
   const raw = url.searchParams.get(name);
   if (raw === null) return fallback;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) ? n : fallback;
+  if (!/^(0|[1-9]\d*)$/.test(raw)) return fallback;
+  const n = Number(raw);
+  return Number.isSafeInteger(n) ? n : fallback;
 }
 
 // ============================================================================
@@ -69,6 +70,7 @@ export function extractIdFromPath(pathname: string, prefix: string): number | nu
   const rest = pathname.slice(prefix.length + 1); // +1 for trailing /
   const segment = rest.split('/')[0];
   if (!segment) return null;
-  const id = parseInt(segment, 10);
-  return Number.isFinite(id) && id > 0 ? id : null;
+  if (!/^[1-9]\d*$/.test(segment)) return null;
+  const id = Number(segment);
+  return Number.isSafeInteger(id) ? id : null;
 }

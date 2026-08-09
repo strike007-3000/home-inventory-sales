@@ -12,6 +12,7 @@ export interface Product {
   readonly quantity: number;
   readonly lowStockLevel: number;
   readonly active: boolean;
+  readonly version: number;
 }
 
 export type PaymentMethod = 'upi' | 'cash' | 'card' | 'bank-transfer' | 'other';
