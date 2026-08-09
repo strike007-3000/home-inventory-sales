@@ -884,6 +884,7 @@ interface StockArrivedScreenProps {
 function StockArrivedScreen({ state, onRestockDraftChange }: StockArrivedScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { execute: saveStock } = useStockDelivery();
 
@@ -901,6 +902,7 @@ function StockArrivedScreen({ state, onRestockDraftChange }: StockArrivedScreenP
 
   const handleSave = async () => {
     setError(null);
+    setSuccessMessage(null);
     setIsSubmitting(true);
     await new Promise((resolve) => setTimeout(resolve, 300));
 
@@ -917,9 +919,8 @@ function StockArrivedScreen({ state, onRestockDraftChange }: StockArrivedScreenP
     setIsSubmitting(false);
 
     if (result && result.ok) {
-      // Store success message or navigate
-      alert(`Saved ${result.entries.length} items successfully`);
-      // Clear the draft
+      // Clear the draft and show inline success feedback
+      setSuccessMessage(`Saved ${result.entries.length} items successfully`);
       onRestockDraftChange([]);
     } else {
       // Error is already handled by the hook
@@ -931,6 +932,12 @@ function StockArrivedScreen({ state, onRestockDraftChange }: StockArrivedScreenP
     <div class="screen">
       <div class="main">
         <h1 class="text-2xl font-semibold mb-4">Stock arrived</h1>
+
+        {successMessage && (
+          <div class="status-chip status-chip-success mb-4 text-sm font-semibold" style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', justifyContent: 'center' }} role="status">
+            {successMessage}
+          </div>
+        )}
 
         <div class="search-input">
           <SearchIcon />
@@ -1786,7 +1793,7 @@ export function App() {
       <div class="app">
         <div class="screen">
           <div class="main no-sticky-action">
-            <div style={{ textAlign: 'center', paddingTop: '20vh' }}>
+            <div class="auth-loading">
               <p class="text-ink-light">Loading...</p>
             </div>
           </div>

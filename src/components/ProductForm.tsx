@@ -129,7 +129,9 @@ export function ProductForm({
     required = false,
   ) => (
     <div class="form-group">
-      <label class="form-label" for={id}>{label} (₹){required ? ' *' : ''}</label>
+      <label class="form-label" for={id}>
+        {label} (₹){required ? <span class="required-asterisk">*</span> : ''}
+      </label>
       <input
         id={id}
         type="number"
@@ -154,7 +156,9 @@ export function ProductForm({
       {errors.submit && <div class="error-message mb-4" role="alert">{errors.submit}</div>}
 
       <div class="form-group">
-        <label class="form-label" for="name">Product name *</label>
+        <label class="form-label" for="name">
+          Product name <span class="required-asterisk">*</span>
+        </label>
         <input
           id="name"
           type="text"
@@ -197,16 +201,20 @@ export function ProductForm({
 
       <div class="grid grid-cols-2 gap-4">
         <div class="form-group">
-          <label class="form-label" for="quantity">Individual quantity *</label>
+          <label class="form-label" for="quantity">
+            Individual quantity <span class="required-asterisk">*</span>
+          </label>
           <input id="quantity" type="number" class={`form-input ${errors.quantity ? 'form-input-error' : ''}`} value={formData.quantity} onInput={(event) => setField('quantity', Number((event.target as HTMLInputElement).value))} min="0" step="1" inputMode="numeric" required disabled={loading || isEditing} />
           {errors.quantity && <span class="text-error text-sm mt-1 block">{errors.quantity}</span>}
-          {isEditing && <span class="text-sm text-ink-light">Use a stock action to change QTY.</span>}
+          {isEditing && <span class="form-hint block">Use a stock action to change QTY.</span>}
         </div>
         <div class="form-group">
-          <label class="form-label" for="setStockQuantity">Stock (sets) *</label>
+          <label class="form-label" for="setStockQuantity">
+            Stock (sets) <span class="required-asterisk">*</span>
+          </label>
           <input id="setStockQuantity" type="number" class={`form-input ${errors.setStockQuantity ? 'form-input-error' : ''}`} value={formData.setStockQuantity} onInput={(event) => setField('setStockQuantity', Number((event.target as HTMLInputElement).value))} min="0" step="0.5" inputMode="decimal" required disabled={loading || isEditing} />
           {errors.setStockQuantity && <span class="text-error text-sm mt-1 block">{errors.setStockQuantity}</span>}
-          {isEditing && <span class="text-sm text-ink-light">Stock changes will use the sale or stock flow.</span>}
+          {isEditing && <span class="form-hint block">Stock changes will use the sale or stock flow.</span>}
         </div>
       </div>
 
