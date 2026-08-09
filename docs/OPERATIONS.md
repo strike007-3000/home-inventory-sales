@@ -1,19 +1,23 @@
 # Operations and Deployment
 
-## Production resources
+## Deployment resources
 
-- Worker: `home-inventory`
-- URL: <https://home-inventory.shreyasgore.workers.dev>
-- D1 binding: `DB`
-- D1 database name: `home-inventory-db`
-- Production branch: `main`
+Each fork must create and configure its own:
+
+- Cloudflare Worker name and deployment URL
+- D1 database and `DB` binding
+- allowed production origin
+- runtime secrets
+- Git repository and production branch
+
+Do not copy another deployment's URL, database identifier, token, or secrets.
 
 ## Automatic deployment
 
-Cloudflare Workers Builds is connected to `strike007-3000/home-inventory-sales`.
+Connect Cloudflare Workers Builds to your fork.
 
 - Build command: `npm run check`
-- Deploy command: `npx wrangler d1 migrations apply home-inventory-db --remote && npx wrangler deploy`
+- Deploy command: `npx wrangler d1 migrations apply YOUR_D1_DATABASE --remote && npx wrangler deploy`
 - Root directory: `/`
 - Non-production builds: disabled
 - Build cache: enabled
@@ -54,7 +58,7 @@ Use only when Git deployment is unavailable and the change is already verified:
 
 ```bash
 npm run check
-npx wrangler d1 migrations apply home-inventory-db --remote
+npx wrangler d1 migrations apply YOUR_D1_DATABASE --remote
 npx wrangler deploy
 ```
 
@@ -63,7 +67,7 @@ npx wrangler deploy
 After deployment:
 
 1. Confirm the Workers Build completed.
-2. Open the production URL and sign in.
+2. Open your deployment URL and sign in.
 3. Verify Home, Products, Sales, LIDS, and Stock navigation.
 4. Avoid creating test transactions in production. If an exceptional test record is necessary, cancel it through the application; direct deletion is not a normal workflow.
 
@@ -71,7 +75,7 @@ Useful read-only checks:
 
 ```bash
 npx wrangler deployments list
-npx wrangler d1 migrations list home-inventory-db --remote
+npx wrangler d1 migrations list YOUR_D1_DATABASE --remote
 ```
 
 ## Backup and recovery

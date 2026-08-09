@@ -2,7 +2,7 @@
 
 A private, touch-friendly inventory and sales application for a small home business. It runs as one Cloudflare Worker, serves a Preact interface, and stores production records in Cloudflare D1.
 
-Live application: <https://home-inventory.shreyasgore.workers.dev>
+Forks should supply their own Cloudflare account, Worker name, D1 database, allowed origin, secrets, and deployment URL.
 
 ## Current capabilities
 
