@@ -1,100 +1,75 @@
 # Home Inventory
 
-A lightweight, hosted inventory and sales application for a home business with approximately 1,000 products and one or two non-technical users.
+A private, touch-friendly inventory and sales application for a small home business. It runs as one Cloudflare Worker, serves a Preact interface, and stores production records in Cloudflare D1.
 
-The application is designed for phones and iPads. It lets users manage products, receive and count stock, record sales, correct mistakes, and understand every stock change without installing software on a specific device.
+Live application: <https://home-inventory.shreyasgore.workers.dev>
 
-> [!WARNING]
-> This repository currently contains a Phase 0 usability prototype with sample, in-memory data. It has not been approved for production use and must not be trusted with real customer, payment, inventory, or business records.
+## Current capabilities
 
-## Current status
+- Inventory catalogue with colour, optional size, QTY, Stock/set count, MRP, SRP/SP, consultant price, location, and self-use indication
+- Product search, editing, activation/deactivation, stock delivery, stock counts, and reasoned corrections
+- Sales with customer name, editable sale date, price overrides, discounts, payment method, partial/unpaid balances, later payments, and cancellation
+- Searchable sales history with payment-status filtering
+- Separate LIDS market-price lookup that never participates in inventory stock
+- Shared-password authentication with signed cookies and CSRF protection
+- Responsive desktop, phone, and iPad layouts
+- Automatic production builds and deployments from GitHub `main`
 
-- Public project name: **Home Inventory**
-- Suggested repository name: `home-inventory-sales`
-- Stage: Phase 0 prototype and parent usability testing
-- Currency: INR, stored as integer paise
-- Default payment method: UPI
-- Persistence and authentication: not implemented yet
+## Technology
 
-## Run locally
+- Preact, TypeScript, and Vite
+- Cloudflare Workers Static Assets and Worker API routes
+- Cloudflare D1 with committed schema migrations
+- Vitest, Cloudflare Workers test pool, and Playwright
 
-Requirements: a current Node.js LTS release and npm.
+## Local development
+
+Requirements: Node.js and npm.
 
 ```bash
 npm install
+cp .dev.vars.example .dev.vars
+node scripts/generate-password-hash.mjs
+```
+
+Put the generated hash and a random session secret in `.dev.vars`, then run two terminals:
+
+```bash
+npx wrangler dev --local --port 8787
 npm run dev
 ```
 
-Run the build and unit checks with:
+Open the Vite URL shown in the second terminal. The browser frontend calls the local Worker on port 8787.
+
+Run the full required validation:
 
 ```bash
 npm run check
 ```
 
-The checks must pass before publishing a release. See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution guidance and [SECURITY.md](./SECURITY.md) for responsible vulnerability reporting.
+## Data boundary
 
-## Product principles
+GitHub contains application code, schema migrations, and synthetic test fixtures only. It must never contain production D1 rows, customer or payment records, inventory/LIDS exports, real storage locations, credentials, `.dev.vars`, local SQLite files, or one-time business-data seeds.
 
-- Use everyday actions: **Sell**, **Stock arrived**, **Count stock**, and **Fix a mistake**.
-- Keep one shared password; do not build registration, roles, or user administration.
-- Preserve history. Cancel or reverse transactions instead of deleting them.
-- Make stock and money updates transactional so partial sales cannot occur.
-- Start small, pilot with real users, and add features only after a demonstrated need.
-- Remain usable on narrow phone screens and touch-first devices.
-
-## Recommended stack
-
-| Concern | Choice |
-|---|---|
-| Application | One TypeScript Cloudflare Worker |
-| Web UI | Server-rendered HTML or a lightweight React/Preact client |
-| Database | Cloudflare D1 |
-| Authentication | Shared password and signed secure cookie |
-| Hosting | Cloudflare Workers with static assets |
-| Address | Free `*.workers.dev` subdomain |
-| Source and deployment | GitHub with automatic Cloudflare deployment |
-
-This is intended to cost INR 0 within Cloudflare's free limits. No provider can guarantee that a hosted tier will remain free forever, so the system must support portable data exports and committed database migrations.
-
-## MVP workflows
-
-1. Add, edit, search, import, and deactivate products.
-2. Receive several products in one stock delivery.
-3. Enter a physical count without calculating the adjustment manually.
-4. Record damage, loss, samples, and other corrections with a reason.
-5. Record a multi-item sale and deduct stock atomically.
-6. Cancel a sale or record a return without deleting history.
-7. View low-stock products and plain-language stock history.
-8. Export products, sales, and stock movements.
+Local-only business files belong under `.private/`, which is ignored by Git. Production data remains in Cloudflare D1.
 
 ## Documentation
 
-- [INVENTORY_SYSTEM_PLAN.md](./INVENTORY_SYSTEM_PLAN.md) — product scope, phases, data model, and acceptance criteria
-- [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) — recommended build order and technical rules
-- [CLOUD_DEPLOYMENT_SUMMARY.md](./CLOUD_DEPLOYMENT_SUMMARY.md) — hosting, authentication, deployment, and backup approach
-- [QUICK_REFERENCE.md](./QUICK_REFERENCE.md) — concise implementation checklist
-- [DELIVERY_SUMMARY.md](./DELIVERY_SUMMARY.md) — decisions made and intentionally deferred work
+- [Product](docs/PRODUCT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Operations and deployment](docs/OPERATIONS.md)
+- [Contributing and local development](docs/CONTRIBUTING.md)
+- [Security](docs/SECURITY.md)
+- [Design system](docs/DESIGN.md)
+- [Historical plans](docs/archive/README.md)
 
-## Development order
+## Known gaps
 
-1. Validate two mobile wireframes with the parents.
-2. Build product setup and CSV import.
-3. Build stock arrival, physical count, and corrections.
-4. Build sale recording and returns.
-5. Add dashboard, exports, authentication, and deployment.
-6. Pilot with 20–50 products for two weeks.
-7. Fix usability issues, then import the full catalogue.
-8. Add barcode scanning only if search is too slow.
-
-## Existing projects worth studying
-
-- [Open Source Point of Sale](https://github.com/opensourcepos/opensourcepos) for checkout, receipts, and reporting flows
-- [Grocy](https://github.com/grocy/grocy) for barcode and stock-taking workflows
-- [InvenTree](https://github.com/inventree/InvenTree) for stock-ledger discipline
-- [Frappe Books](https://github.com/frappe/books) for receipts and accounting concepts
-
-These are references, not recommended foundations. Their scope and hosting requirements are larger than this application needs.
+- User-facing export/restore is not implemented yet.
+- There is one shared application password rather than individual accounts or roles.
+- Product CSV import remains server-side legacy code; its UI has been intentionally removed.
+- Returns are handled by cancellation/correction workflows rather than a dedicated partial-return feature.
 
 ## License
 
-Licensed under the [MIT License](./LICENSE).
+MIT. See [LICENSE](LICENSE).

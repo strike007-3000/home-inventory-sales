@@ -24,7 +24,7 @@ import {
   type SaleDraft,
   type RestockLine,
 } from '../../src/domain';
-import { createInitialState, PRODUCT_IDS } from '../../src/seed';
+import { createInitialState, PRODUCT_IDS } from '../fixtures/inventory-state';
 
 describe('formatInr', () => {
   it('formats whole rupees without decimal', () => {

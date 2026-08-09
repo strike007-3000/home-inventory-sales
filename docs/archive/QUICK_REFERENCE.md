@@ -1,5 +1,7 @@
 # Inventory MVP Quick Reference
 
+> Archived pre-production checklist. It is not a release or operations guide.
+
 ## One-minute overview
 
 ```text

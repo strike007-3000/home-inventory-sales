@@ -1,5 +1,7 @@
 # Inventory and Sales System Plan
 
+> Archived original proposal. See `../PRODUCT.md` and `../ARCHITECTURE.md` for the current system.
+
 ## 1. Purpose and constraints
 
 Build a generic inventory and sales tool for a Tupperware-style home business.

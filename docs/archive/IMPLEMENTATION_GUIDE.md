@@ -1,5 +1,7 @@
 # MVP Implementation Guide
 
+> Archived pre-production guide. Current development instructions are in `../CONTRIBUTING.md`.
+
 This guide defines build order and correctness boundaries. It intentionally avoids a large framework scaffold before implementation begins.
 
 ## 1. Suggested project shape
