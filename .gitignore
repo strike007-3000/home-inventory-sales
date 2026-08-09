@@ -9,6 +9,7 @@ coverage/
 .pnpm-store/
 .private/
 graphify-out/
+docs/archive/
 .claude/
 .impeccable/*
 !.impeccable/design.json

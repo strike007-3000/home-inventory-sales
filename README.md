@@ -59,7 +59,6 @@ Local-only business files belong under `.private/`, which is ignored by Git. Pro
 - [Contributing and local development](docs/CONTRIBUTING.md)
 - [Security](docs/SECURITY.md)
 - [Design system](docs/DESIGN.md)
-- [Historical plans](docs/archive/README.md)
 
 ## Known gaps
 
