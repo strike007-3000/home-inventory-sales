@@ -27,6 +27,7 @@ test-results/
 *.db-wal
 *.sqlite
 *.sqlite3
+migrations/*seed*.sql
 exports/
 backups/
 

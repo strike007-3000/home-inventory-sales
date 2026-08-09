@@ -2485,4 +2485,122 @@ describe('Product API', () => {
       expect(movMap.get(p2.id)).toBe(8);
     });
   });
+
+  describe('catalogue fields and locations', () => {
+    it('lists canonical locations for product forms', async () => {
+      const response = await apiGetProducts(session, csrf, '/api/locations');
+      expect(response.status).toBe(200);
+      const data = await response.json<{ items: Array<{ id: number; name: string }> }>();
+      expect(data.items.map(({ name }) => name)).toContain('Test Shelf A');
+      expect(data.items.map(({ name }) => name)).toContain('Test Shelf B');
+    });
+
+    it('creates and returns the full inventory catalogue fields', async () => {
+      const location = await env.DB.prepare(
+        'SELECT id FROM locations WHERE name = ?',
+      ).bind('Test Shelf A').first<{ id: number }>();
+
+      const response = await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Clear Bowl',
+        colour: 'Blue and transparent',
+        size: '210 ml and 480 ml',
+        sku: null,
+        category: 'Bowls',
+        mrpPaise: 90000,
+        pricePaise: 85000,
+        consultantPricePaise: 64600,
+        quantity: 3,
+        setStockQuantity: 1.5,
+        lowStockLevel: 1,
+        locationId: location!.id,
+        personalUse: true,
+        active: true,
+      });
+
+      expect(response.status).toBe(201);
+      const product = await response.json();
+      expect(product).toMatchObject({
+        name: 'Clear Bowl',
+        colour: 'Blue and transparent',
+        size: '210 ml and 480 ml',
+        mrpPaise: 90000,
+        pricePaise: 85000,
+        consultantPricePaise: 64600,
+        quantity: 3,
+        setStockQuantity: 1.5,
+        locationId: location!.id,
+        locationName: 'Test Shelf A',
+        personalUse: true,
+      });
+    });
+
+    it('searches by colour, size, and normalized location', async () => {
+      const location = await env.DB.prepare(
+        'SELECT id FROM locations WHERE name = ?',
+      ).bind('Test Shelf B').first<{ id: number }>();
+      await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Reference Product',
+        colour: 'Grape fizz',
+        size: '1.4 litre',
+        pricePaise: 50000,
+        quantity: 2,
+        setStockQuantity: 1,
+        lowStockLevel: 0,
+        locationId: location!.id,
+        active: true,
+      });
+
+      for (const query of ['grape', '1.4 litre', 'test shelf b']) {
+        const response = await apiGetProducts(
+          session,
+          csrf,
+          `/api/products?q=${encodeURIComponent(query)}`,
+        );
+        const data = await response.json<{ items: Array<{ name: string }> }>();
+        expect(data.items.map(({ name }) => name)).toContain('Reference Product');
+      }
+    });
+
+    it('rejects unknown locations and protects set stock during ordinary edits', async () => {
+      const invalidLocation = await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Unknown Location Product',
+        pricePaise: 10000,
+        quantity: 1,
+        setStockQuantity: 1,
+        lowStockLevel: 0,
+        locationId: 999999,
+        active: true,
+      });
+      expect(invalidLocation.status).toBe(400);
+
+      const createdResponse = await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Protected Stock Product',
+        pricePaise: 10000,
+        quantity: 4,
+        setStockQuantity: 2,
+        lowStockLevel: 0,
+        active: true,
+      });
+      const created = await createdResponse.json();
+
+      const updateResponse = await apiPutProducts(
+        session,
+        csrf,
+        `/api/products/${created.id}?version=${created.version}`,
+        {
+          name: created.name,
+          sku: created.sku,
+          category: created.category,
+          pricePaise: created.pricePaise,
+          quantity: created.quantity,
+          setStockQuantity: 1,
+          lowStockLevel: created.lowStockLevel,
+          active: created.active,
+        },
+      );
+      expect(updateResponse.status).toBe(409);
+      const error = await updateResponse.json<{ error: string }>();
+      expect(error.error).toContain('Set stock');
+    });
+  });
 });

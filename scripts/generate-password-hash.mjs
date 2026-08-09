@@ -2,7 +2,7 @@
 // One-off script to generate a PBKDF2 password hash for Cloudflare Worker secrets.
 // Usage: node scripts/generate-password-hash.mjs (secure prompt)
 // For disposable local/test passwords only: node scripts/generate-password-hash.mjs "password"
-// Store the output with: wrangler secret put PASSWORD_HASH
+// Store the output with: node scripts/generate-password-hash.mjs | npx wrangler secret put PASSWORD_HASH
 
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
 
@@ -11,7 +11,9 @@ async function promptHidden(prompt) {
     throw new Error('A TTY is required for the secure password prompt.');
   }
 
-  process.stdout.write(prompt);
+  // Prompts go to stderr so stdout contains only the generated hash and can be
+  // piped directly into `wrangler secret put` without exposing the password.
+  process.stderr.write(prompt);
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.setEncoding('utf8');
@@ -31,7 +33,7 @@ async function promptHidden(prompt) {
       for (const [signal, handler] of signalHandlers) {
         process.removeListener(signal, handler);
       }
-      process.stdout.write('\n');
+      process.stderr.write('\n');
     };
     const onError = (error) => {
       finish();
@@ -73,7 +75,8 @@ async function promptHidden(prompt) {
 const password = process.argv[2] ?? await promptHidden('Password: ');
 if (!password) throw new Error('Password must not be empty.');
 
-const iterations = 210_000;
+// Cloudflare Workers Web Crypto currently supports at most 100,000 PBKDF2 iterations.
+const iterations = 100_000;
 const salt = randomBytes(16);
 const derived = pbkdf2Sync(password, salt, iterations, 32, 'sha256');
 

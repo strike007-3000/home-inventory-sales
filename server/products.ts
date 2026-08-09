@@ -7,7 +7,12 @@ import {
   getQueryParam,
   requireJsonBody,
 } from './validation';
-import type { ProductDTO, CreateProductRequest, UpdateProductRequest } from '../shared/contracts';
+import type { LocationDTO, ProductDTO, CreateProductRequest, UpdateProductRequest } from '../shared/contracts';
+
+const PRODUCT_SELECT = `
+  SELECT products.*,
+         (SELECT name FROM locations WHERE id = products.location_id) AS location_name
+  FROM products`;
 
 class ProductDomainError extends Error {
   constructor(
@@ -49,6 +54,33 @@ function productErrorResponse(error: unknown): Response {
   return errorResponse('Internal server error', 500);
 }
 
+function optionalText(value: string | null | undefined): string | null {
+  return value?.trim() || null;
+}
+
+function validateOptionalMoney(value: number | null | undefined, label: string): void {
+  if (value !== null && value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+    throw new ProductDomainError(`${label} must be a non-negative integer in paise`, 400);
+  }
+}
+
+function validateSetStock(value: number): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new ProductDomainError('Set stock must be a non-negative number', 400);
+  }
+}
+
+async function validateLocation(env: Env, locationId: number | null): Promise<void> {
+  if (locationId === null) return;
+  if (!Number.isSafeInteger(locationId) || locationId <= 0) {
+    throw new ProductDomainError('Invalid location', 400);
+  }
+  const location = await env.DB.prepare('SELECT id FROM locations WHERE id = ?')
+    .bind(locationId)
+    .first();
+  if (!location) throw new ProductDomainError('Location not found', 400);
+}
+
 // ============================================================================
 // Product DTO builder
 // ============================================================================
@@ -61,9 +93,17 @@ function buildProductDTO(
     sku: row.sku as string | null,
     name: row.name as string,
     category: row.category as string | null,
+    colour: row.colour as string | null,
+    size: row.size as string | null,
     pricePaise: row.selling_price_minor as number,
+    mrpPaise: row.mrp_minor as number | null,
+    consultantPricePaise: row.cost_price_minor as number | null,
     quantity: row.stock_quantity as number,
+    setStockQuantity: row.set_stock_quantity as number,
     lowStockLevel: row.low_stock_level as number,
+    locationId: row.location_id as number | null,
+    locationName: row.location_name as string | null,
+    personalUse: (row.personal_use as number) === 1,
     active: (row.active as number) === 1,
     version: row.version as number,
     createdAt: row.created_at as string,
@@ -92,11 +132,21 @@ async function listProducts(
     whereClauses.push('active = 0');
   }
 
-  // Search filter (name or SKU)
+  // Search descriptive fields without treating them as identity keys.
   if (query && query.trim()) {
-    whereClauses.push('(name LIKE ? OR sku LIKE ?)');
-    const searchTerm = `%${query.trim().toLowerCase()}%`;
-    params.push(searchTerm, searchTerm);
+    whereClauses.push(`(
+      name LIKE ? COLLATE NOCASE OR
+      sku LIKE ? COLLATE NOCASE OR
+      colour LIKE ? COLLATE NOCASE OR
+      size LIKE ? COLLATE NOCASE OR
+      EXISTS (
+        SELECT 1 FROM locations
+        WHERE locations.id = products.location_id
+          AND locations.name LIKE ? COLLATE NOCASE
+      )
+    )`);
+    const searchTerm = `%${query.trim()}%`;
+    params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
   }
 
   const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -107,7 +157,7 @@ async function listProducts(
   const total = countResult?.total ?? 0;
 
   // Get paginated results
-  const dataSql = `SELECT * FROM products ${whereClause} ORDER BY name ASC LIMIT ? OFFSET ?`;
+  const dataSql = `${PRODUCT_SELECT} ${whereClause} ORDER BY name ASC, id ASC LIMIT ? OFFSET ?`;
   const dataParams = [...params, limit, offset];
   const result = await env.DB.prepare(dataSql).bind(...dataParams).all();
 
@@ -136,11 +186,23 @@ async function createProduct(
 
   const name = request.name.trim();
   const sku = request.sku?.trim() || null;
+  const colour = optionalText(request.colour);
+  const size = optionalText(request.size);
+  const category = optionalText(request.category);
+  const setStockQuantity = request.setStockQuantity ?? 0;
+  const mrpPaise = request.mrpPaise ?? null;
+  const consultantPricePaise = request.consultantPricePaise ?? null;
+  const locationId = request.locationId ?? null;
+  const personalUse = request.personalUse ?? false;
 
   // Validate price
   if (request.pricePaise < 0 || !Number.isSafeInteger(request.pricePaise)) {
     throw new ProductDomainError('Price must be a non-negative integer in paise', 400);
   }
+  validateOptionalMoney(mrpPaise, 'MRP');
+  validateOptionalMoney(consultantPricePaise, 'Consultant price');
+  validateSetStock(setStockQuantity);
+  await validateLocation(env, locationId);
 
   // Validate quantities
   if (request.quantity < 0 || !Number.isSafeInteger(request.quantity)) {
@@ -166,16 +228,27 @@ async function createProduct(
 
   // Insert product
   const result = await env.DB.prepare(
-    `INSERT INTO products (sku, name, category, selling_price_minor, stock_quantity, low_stock_level, active, created_at, updated_at, version)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+    `INSERT INTO products (
+       sku, name, category, colour, size, selling_price_minor,
+       cost_price_minor, stock_quantity, set_stock_quantity, mrp_minor,
+       low_stock_level, location_id, personal_use, active,
+       created_at, updated_at, version
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
   )
     .bind(
       sku,
       name,
-      request.category?.trim() || null,
+      category,
+      colour,
+      size,
       request.pricePaise,
+      consultantPricePaise,
       request.quantity,
+      setStockQuantity,
+      mrpPaise,
       request.lowStockLevel,
+      locationId,
+      personalUse ? 1 : 0,
       request.active ? 1 : 0,
       now,
       now
@@ -188,7 +261,7 @@ async function createProduct(
 
   // Get inserted product
   const inserted = await env.DB.prepare(
-    'SELECT * FROM products WHERE id = ? ORDER BY id DESC LIMIT 1'
+    `${PRODUCT_SELECT} WHERE products.id = ?`
   )
     .bind(result.meta?.last_row_id || 0)
     .first();
@@ -214,7 +287,7 @@ async function updateProduct(
 
   // Get current product to verify version
   const current = await env.DB.prepare(
-    'SELECT version, name, sku, active, stock_quantity FROM products WHERE id = ?'
+    `${PRODUCT_SELECT} WHERE products.id = ?`
   )
     .bind(id)
     .first();
@@ -235,11 +308,35 @@ async function updateProduct(
 
   const name = request.name.trim();
   const sku = request.sku?.trim() || null;
+  const colour = request.colour === undefined
+    ? current.colour as string | null
+    : optionalText(request.colour);
+  const size = request.size === undefined
+    ? current.size as string | null
+    : optionalText(request.size);
+  const category = optionalText(request.category);
+  const setStockQuantity = request.setStockQuantity ?? current.set_stock_quantity as number;
+  const mrpPaise = request.mrpPaise === undefined
+    ? current.mrp_minor as number | null
+    : request.mrpPaise;
+  const consultantPricePaise = request.consultantPricePaise === undefined
+    ? current.cost_price_minor as number | null
+    : request.consultantPricePaise;
+  const locationId = request.locationId === undefined
+    ? current.location_id as number | null
+    : request.locationId;
+  const personalUse = request.personalUse === undefined
+    ? current.personal_use === 1
+    : request.personalUse;
 
   // Validate price
   if (request.pricePaise < 0 || !Number.isSafeInteger(request.pricePaise)) {
     throw new ProductDomainError('Price must be a non-negative integer in paise', 400);
   }
+  validateOptionalMoney(mrpPaise, 'MRP');
+  validateOptionalMoney(consultantPricePaise, 'Consultant price');
+  validateSetStock(setStockQuantity);
+  await validateLocation(env, locationId);
 
   // Validate quantities
   if (request.quantity < 0 || !Number.isSafeInteger(request.quantity)) {
@@ -252,6 +349,9 @@ async function updateProduct(
 
   if (request.quantity !== current.stock_quantity) {
     throw new ProductDomainError('Stock quantity must be changed through a stock workflow', 409);
+  }
+  if (setStockQuantity !== current.set_stock_quantity) {
+    throw new ProductDomainError('Set stock must be changed through a stock or sale workflow', 409);
   }
 
   // Check for duplicate SKU (case-insensitive, excluding current product)
@@ -270,15 +370,24 @@ async function updateProduct(
   // Update product
   const result = await env.DB.prepare(
     `UPDATE products
-     SET sku = ?, name = ?, category = ?, selling_price_minor = ?, low_stock_level = ?, active = ?, version = version + 1, updated_at = ?
+     SET sku = ?, name = ?, category = ?, colour = ?, size = ?,
+         selling_price_minor = ?, cost_price_minor = ?, mrp_minor = ?,
+         low_stock_level = ?, location_id = ?, personal_use = ?, active = ?,
+         version = version + 1, updated_at = ?
      WHERE id = ? AND version = ?`
   )
     .bind(
       sku,
       name,
-      request.category?.trim() || null,
+      category,
+      colour,
+      size,
       request.pricePaise,
+      consultantPricePaise,
+      mrpPaise,
       request.lowStockLevel,
+      locationId,
+      personalUse ? 1 : 0,
       request.active ? 1 : 0,
       now,
       id,
@@ -295,7 +404,7 @@ async function updateProduct(
 
   // Get updated product
   const updated = await env.DB.prepare(
-    'SELECT * FROM products WHERE id = ?'
+    `${PRODUCT_SELECT} WHERE products.id = ?`
   )
     .bind(id)
     .first();
@@ -349,7 +458,7 @@ async function toggleProductActive(
 
   // Get updated product
   const updated = await env.DB.prepare(
-    'SELECT * FROM products WHERE id = ?'
+    `${PRODUCT_SELECT} WHERE products.id = ?`
   )
     .bind(id)
     .first();
@@ -385,6 +494,17 @@ export async function handleListProducts(url: URL, env: Env): Promise<Response> 
     const { items, total } = await listProducts(env, query, activeFilter, limit, offset);
 
     return jsonResponse({ items, total });
+  } catch {
+    return errorResponse('Internal server error', 500);
+  }
+}
+
+export async function handleListLocations(env: Env): Promise<Response> {
+  try {
+    const result = await env.DB.prepare(
+      'SELECT id, name FROM locations ORDER BY name COLLATE NOCASE',
+    ).all<LocationDTO>();
+    return jsonResponse({ items: result.results });
   } catch {
     return errorResponse('Internal server error', 500);
   }
@@ -435,7 +555,7 @@ export async function handleGetProduct(
 ): Promise<Response> {
   try {
     const product = await env.DB.prepare(
-      'SELECT * FROM products WHERE id = ?'
+      `${PRODUCT_SELECT} WHERE products.id = ?`
     ).bind(id).first();
 
     if (!product) {

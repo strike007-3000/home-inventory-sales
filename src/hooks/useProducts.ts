@@ -1,15 +1,23 @@
 import { useState, useEffect } from 'preact/hooks';
 import { apiGetJson, apiPostJson, apiPutJson } from '../api';
 import { Product } from '../domain';
+import type { LocationDTO } from '../../shared/contracts';
 
 // Product form data (used for create/update)
 export interface ProductFormData {
   name: string;
   sku?: string;
   category?: string;
+  colour?: string;
+  size?: string;
   pricePaise: number;
+  mrpPaise: number | null;
+  consultantPricePaise: number | null;
   quantity: number;
+  setStockQuantity: number;
   lowStockLevel: number;
+  locationId: number | null;
+  personalUse: boolean;
   active: boolean;
 }
 
@@ -23,6 +31,29 @@ export interface ProductsResponse {
 export interface ProductError {
   field?: string;
   message: string;
+}
+
+export function useLocations() {
+  const [locations, setLocations] = useState<LocationDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchLocations = async () => {
+      try {
+        const data = await apiGetJson<{ items: LocationDTO[] }>('/locations');
+        setLocations(data.items);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch locations');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void fetchLocations();
+  }, []);
+
+  return { locations, loading, error };
 }
 
 // ============================================================================
@@ -44,8 +75,8 @@ export function useProducts(activeFilter?: 'active' | 'inactive' | 'all') {
 
     try {
       const url = activeFilter
-        ? `/api/products?active=${activeFilter}`
-        : '/api/products';
+        ? `/products?active=${activeFilter}`
+        : '/products';
 
       const data = await apiGetJson<ProductsResponse>(url);
       setProducts(data.items);
@@ -82,7 +113,7 @@ export function useCreateProduct() {
     setSuccess(false);
 
     try {
-      const product = await apiPostJson<Product>('/api/products', data);
+      const product = await apiPostJson<Product>('/products', data);
       setSuccess(true);
       return product;
     } catch (err) {
@@ -114,7 +145,7 @@ export function useUpdateProduct() {
     setSuccess(false);
 
     try {
-      const product = await apiPutJson<Product>(`/api/products/${id}?version=${version}`, data);
+      const product = await apiPutJson<Product>(`/products/${id}?version=${version}`, data);
       setSuccess(true);
       return product;
     } catch (err) {
@@ -147,7 +178,7 @@ export function useToggleProduct() {
 
     try {
       const action = active ? 'activate' : 'deactivate';
-      const product = await apiPostJson<Product>(`/api/products/${id}/${action}`, {});
+      const product = await apiPostJson<Product>(`/products/${id}/${action}`, {});
       setSuccess(true);
       return product;
     } catch (err) {

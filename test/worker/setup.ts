@@ -7,6 +7,7 @@ import { beforeEach } from 'vitest';
 beforeEach(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   await env.DB.batch([
+    env.DB.prepare('DELETE FROM sale_payments'),
     env.DB.prepare('DELETE FROM sale_items'),
     env.DB.prepare('DELETE FROM sale_cancellations'),
     env.DB.prepare('DELETE FROM stock_entry_items'),
@@ -14,7 +15,13 @@ beforeEach(async () => {
     env.DB.prepare('DELETE FROM sales'),
     env.DB.prepare('DELETE FROM stock_entries'),
     env.DB.prepare('DELETE FROM import_staging'),
+    env.DB.prepare('DELETE FROM lid_references'),
     env.DB.prepare('DELETE FROM products'),
+    env.DB.prepare('DELETE FROM locations'),
     env.DB.prepare('DELETE FROM login_attempts'),
+  ]);
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO locations (name) VALUES ('Test Shelf A')"),
+    env.DB.prepare("INSERT INTO locations (name) VALUES ('Test Shelf B')"),
   ]);
 });

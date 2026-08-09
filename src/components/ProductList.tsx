@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import { useProducts, useCreateProduct, useUpdateProduct, useToggleProduct, type ProductFormData } from '../hooks/useProducts';
+import { useProducts, useCreateProduct, useUpdateProduct, useToggleProduct, useLocations, type ProductFormData } from '../hooks/useProducts';
 import { formatInr } from '../domain';
 import { ProductForm } from './ProductForm';
 import {
@@ -31,12 +31,18 @@ export function ProductList({ activeFilter = 'all' }: ProductListProps) {
   const { createProduct } = useCreateProduct();
   const { updateProduct } = useUpdateProduct();
   const { toggleProduct, loading: toggling } = useToggleProduct();
+  const { locations, loading: locationsLoading, error: locationsError } = useLocations();
 
   // Use local filter for display, refetch from API
   const filteredProducts = products.filter(product => {
-    const matchesSearch = !searchQuery ||
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (product.sku && product.sku.toLowerCase().includes(searchQuery.toLowerCase()));
+    const normalizedQuery = searchQuery.toLowerCase();
+    const matchesSearch = !searchQuery || [
+      product.name,
+      product.sku,
+      product.colour,
+      product.size,
+      product.locationName,
+    ].some((value) => value?.toLowerCase().includes(normalizedQuery));
 
     const matchesFilter = activeFilter === 'all' ||
       (activeFilter === 'active' && product.active) ||
@@ -78,6 +84,23 @@ export function ProductList({ activeFilter = 'all' }: ProductListProps) {
 
   const activeCount = products.filter(p => p.active).length;
   const inactiveCount = products.filter(p => !p.active).length;
+  const productBeingEdited = products.find((product) => product.id === editingProduct);
+  const editInitialData: ProductFormData | undefined = productBeingEdited ? {
+    name: productBeingEdited.name,
+    sku: productBeingEdited.sku ?? '',
+    category: productBeingEdited.category ?? '',
+    colour: productBeingEdited.colour ?? '',
+    size: productBeingEdited.size ?? '',
+    pricePaise: productBeingEdited.pricePaise,
+    mrpPaise: productBeingEdited.mrpPaise ?? null,
+    consultantPricePaise: productBeingEdited.consultantPricePaise ?? null,
+    quantity: productBeingEdited.quantity,
+    setStockQuantity: productBeingEdited.setStockQuantity ?? 0,
+    lowStockLevel: productBeingEdited.lowStockLevel,
+    locationId: productBeingEdited.locationId ?? null,
+    personalUse: productBeingEdited.personalUse ?? false,
+    active: productBeingEdited.active,
+  } : undefined;
 
   return (
     <div class="screen">
@@ -112,7 +135,7 @@ export function ProductList({ activeFilter = 'all' }: ProductListProps) {
             <input
               type="search"
               class="form-input"
-              placeholder="Search products or SKU..."
+              placeholder="Search name, colour, size, location or SKU…"
               value={searchQuery}
               onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
               aria-label="Search products"
@@ -126,14 +149,23 @@ export function ProductList({ activeFilter = 'all' }: ProductListProps) {
           </div>
         )}
 
+        {locationsError && (
+          <div class="error-message mb-4" role="alert">{locationsError}</div>
+        )}
+
         {creatingProduct ? (
           <ProductForm
+            locations={locations}
+            locationsLoading={locationsLoading}
             onSave={(data) => handleCreate(data)}
             onCancel={handleCancel}
             isEditing={false}
           />
         ) : editingProduct ? (
           <ProductForm
+            initialData={editInitialData!}
+            locations={locations}
+            locationsLoading={locationsLoading}
             onSave={(data) => handleUpdate(editingProduct, data)}
             onCancel={handleCancel}
             isEditing={true}
@@ -174,6 +206,11 @@ export function ProductList({ activeFilter = 'all' }: ProductListProps) {
                       <div class="flex items-start justify-between">
                         <div>
                           <div class="font-semibold">{product.name}</div>
+                          {(product.colour || product.size) && (
+                            <div class="text-sm text-ink-light">
+                              {[product.colour, product.size].filter(Boolean).join(' · ')}
+                            </div>
+                          )}
                           {product.sku && (
                             <div class="text-sm text-ink-light code">
                               SKU: {product.sku}
@@ -184,8 +221,14 @@ export function ProductList({ activeFilter = 'all' }: ProductListProps) {
                               {product.category}
                             </div>
                           )}
+                          {product.locationName && (
+                            <div class="text-sm text-ink-light">{product.locationName}</div>
+                          )}
                         </div>
                         <div class="product-status-badge">
+                          {product.personalUse && (
+                            <span class="status-chip status-chip-warning">Keep aside</span>
+                          )}
                           {product.active ? (
                             <span class="status-chip status-chip-success">
                               Active
@@ -200,10 +243,14 @@ export function ProductList({ activeFilter = 'all' }: ProductListProps) {
                     </div>
 
                     <div class="product-list-meta">
-                      <div class="font-semibold text-lg">{formatInr(product.pricePaise)}</div>
+                      <div class="font-semibold text-lg">SRP {formatInr(product.pricePaise)} / Stock</div>
+                      {product.mrpPaise !== null && product.mrpPaise !== undefined && (
+                        <div class="text-sm text-ink-light">MRP {formatInr(product.mrpPaise)} / Stock</div>
+                      )}
                       <div class={product.quantity === 0 ? 'text-error' : product.quantity <= product.lowStockLevel ? 'text-marigold' : 'text-ink-light'}>
-                        {product.quantity === 0 ? 'Out of stock' : `${product.quantity} in stock`}
+                        {product.quantity === 0 ? 'Out of stock' : `${product.quantity} individual`}
                       </div>
+                      <div class="text-sm text-ink-light">{product.setStockQuantity ?? 0} sets</div>
                     </div>
 
                     <div class="product-actions">

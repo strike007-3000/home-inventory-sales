@@ -1,0 +1,174 @@
+import { env, exports } from 'cloudflare:workers';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+const ORIGIN = 'https://inventory.example.test';
+const PASSWORD = 'worker-test-password';
+let session = '';
+let csrf = '';
+let requestNumber = 0;
+
+function request(path: string, init: RequestInit = {}): Request {
+  requestNumber += 1;
+  const headers = new Headers(init.headers);
+  headers.set('CF-Connecting-IP', `198.51.100.${requestNumber}`);
+  return new Request(`${ORIGIN}${path}`, { ...init, headers });
+}
+
+async function api(path: string, method = 'GET', body?: unknown): Promise<Response> {
+  return exports.default.fetch(request(path, {
+    method,
+    headers: {
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      Cookie: `__Host-session=${session}; __Host-csrf=${csrf}`,
+      'X-CSRF-Token': csrf,
+      Origin: ORIGIN,
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }));
+}
+
+async function addProduct(quantity = 8, setStock = 2): Promise<number> {
+  const now = new Date().toISOString();
+  const result = await env.DB.prepare(
+    `INSERT INTO products (name, selling_price_minor, stock_quantity, set_stock_quantity,
+      low_stock_level, active, version, created_at, updated_at)
+     VALUES ('Demo Set', 15000, ?, ?, 1, 1, 1, ?, ?)`,
+  ).bind(quantity, setStock, now, now).run();
+  return Number(result.meta.last_row_id);
+}
+
+beforeEach(async () => {
+  const login = await exports.default.fetch(request('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: ORIGIN },
+    body: JSON.stringify({ password: PASSWORD }),
+  }));
+  expect(login.status).toBe(200);
+  const cookies = login.headers.getSetCookie();
+  session = cookies.find((value) => value.startsWith('__Host-session='))!.split('=')[1]!.split(';')[0]!;
+  csrf = cookies.find((value) => value.startsWith('__Host-csrf='))!.split('=')[1]!.split(';')[0]!;
+});
+
+describe('Sale API', () => {
+  it('completes a sale with an edited price and seller-entered set stock', async () => {
+    const productId = await addProduct();
+    const response = await api('/api/sales', 'POST', {
+      idempotencyKey: 'sale-success',
+      saleDate: '2026-07-15',
+      customerName: '  Anjali Rao  ',
+      lines: [{ productId, quantity: 3, unitPricePaise: 14000, setStockAfter: 1.25 }],
+      discountPaise: 1000,
+      paymentMethod: 'upi',
+      receivedPaise: 20000,
+    });
+    expect(response.status).toBe(201);
+    const sale = await response.json<any>();
+    expect(sale).toMatchObject({ saleDate: '2026-07-15', customerName: 'Anjali Rao', subtotalPaise: 42000, discountPaise: 1000, totalPaise: 41000, paidPaise: 20000, balancePaise: 21000, paymentStatus: 'partial', status: 'completed' });
+    expect(sale.lines[0]).toMatchObject({ unitPricePaise: 14000, setStockBefore: 2, setStockAfter: 1.25 });
+
+    const product = await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?')
+      .bind(productId).first<any>();
+    expect(product).toMatchObject({ stock_quantity: 5, set_stock_quantity: 1.25 });
+    const movement = await env.DB.prepare("SELECT quantity_delta, set_stock_delta FROM stock_movements WHERE product_id = ? AND reason = 'sale'")
+      .bind(productId).first<any>();
+    expect(movement).toMatchObject({ quantity_delta: -3, set_stock_delta: -0.75 });
+  });
+
+  it('returns the original sale for a repeated idempotency key without reducing stock twice', async () => {
+    const productId = await addProduct();
+    const payload = {
+      idempotencyKey: 'same-submit',
+      saleDate: '2026-07-15',
+      lines: [{ productId, quantity: 2, unitPricePaise: 15000, setStockAfter: 1.5 }],
+      discountPaise: 0,
+      paymentMethod: 'cash',
+      receivedPaise: 0,
+    };
+    const first = await api('/api/sales', 'POST', payload);
+    const second = await api('/api/sales', 'POST', payload);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(200);
+    expect((await first.json<any>()).id).toBe((await second.json<any>()).id);
+    const product = await env.DB.prepare('SELECT stock_quantity FROM products WHERE id = ?').bind(productId).first<any>();
+    expect(product.stock_quantity).toBe(6);
+  });
+
+  it('rejects insufficient quantity and leaves no partial sale', async () => {
+    const productId = await addProduct(1, 1);
+    const response = await api('/api/sales', 'POST', {
+      idempotencyKey: 'too-many',
+      saleDate: '2026-07-15',
+      lines: [{ productId, quantity: 2, unitPricePaise: 15000, setStockAfter: 0 }],
+      discountPaise: 0,
+      paymentMethod: 'upi',
+      receivedPaise: 0,
+    });
+    expect(response.status).toBe(409);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS count FROM sales').first<any>()).count).toBe(0);
+    expect((await env.DB.prepare('SELECT stock_quantity FROM products WHERE id = ?').bind(productId).first<any>()).stock_quantity).toBe(1);
+  });
+
+  it('cancels a sale and reverses QTY and set stock through audit history', async () => {
+    const productId = await addProduct();
+    const created = await api('/api/sales', 'POST', {
+      idempotencyKey: 'cancel-me',
+      saleDate: '2026-07-15',
+      lines: [{ productId, quantity: 3, unitPricePaise: 15000, setStockAfter: 1.25 }],
+      discountPaise: 0,
+      paymentMethod: 'card',
+      receivedPaise: 45000,
+    });
+    const sale = await created.json<any>();
+    const cancelled = await api(`/api/sales/${sale.id}/cancel`, 'POST', { reason: 'Customer changed mind' });
+    expect(cancelled.status).toBe(200);
+    expect(await cancelled.json<any>()).toMatchObject({ status: 'cancelled', cancellationReason: 'Customer changed mind' });
+    const product = await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?')
+      .bind(productId).first<any>();
+    expect(product).toMatchObject({ stock_quantity: 8, set_stock_quantity: 2 });
+    const movements = await env.DB.prepare('SELECT reason, quantity_delta, set_stock_delta FROM stock_movements WHERE product_id = ? ORDER BY id')
+      .bind(productId).all<any>();
+    expect(movements.results.slice(-2)).toEqual([
+      { reason: 'sale', quantity_delta: -3, set_stock_delta: -0.75 },
+      { reason: 'cancellation', quantity_delta: 3, set_stock_delta: 0.75 },
+    ]);
+  });
+
+  it('records later payments without allowing an overpayment', async () => {
+    const productId = await addProduct();
+    const created = await api('/api/sales', 'POST', {
+      idempotencyKey: 'pay-later', saleDate: '2026-07-15',
+      lines: [{ productId, quantity: 1, unitPricePaise: 15000, setStockAfter: 1.5 }],
+      discountPaise: 0, paymentMethod: 'upi', receivedPaise: 0,
+    });
+    const sale = await created.json<any>();
+    expect(sale).toMatchObject({ paidPaise: 0, balancePaise: 15000, paymentStatus: 'unpaid' });
+
+    const payment = await api(`/api/sales/${sale.id}/payments`, 'POST', { amountPaise: 5000, paymentMethod: 'cash' });
+    expect(payment.status).toBe(201);
+    expect(await payment.json<any>()).toMatchObject({ paidPaise: 5000, balancePaise: 10000, paymentStatus: 'partial' });
+
+    const overpayment = await api(`/api/sales/${sale.id}/payments`, 'POST', { amountPaise: 10001, paymentMethod: 'cash' });
+    expect(overpayment.status).toBe(400);
+  });
+
+  it('lists sales newest first and searches by customer name', async () => {
+    const productId = await addProduct();
+    await api('/api/sales', 'POST', {
+      idempotencyKey: 'history-one', saleDate: '2026-07-14', customerName: 'Meera Shah',
+      lines: [{ productId, quantity: 1, unitPricePaise: 15000, setStockAfter: 1.5 }],
+      discountPaise: 0, paymentMethod: 'upi', receivedPaise: 5000,
+    });
+    const response = await api('/api/sales?q=meera&limit=50');
+    expect(response.status).toBe(200);
+    const body = await response.json<any>();
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).toMatchObject({
+      customerName: 'Meera Shah', saleDate: '2026-07-14', totalPaise: 15000,
+      paidPaise: 5000, balancePaise: 10000, paymentStatus: 'partial',
+    });
+
+    const dashboard = await api('/api/dashboard?date=2026-07-14');
+    expect(dashboard.status).toBe(200);
+    expect(await dashboard.json<any>()).toMatchObject({ today: { count: 1, totalPaise: 15000 } });
+  });
+});
