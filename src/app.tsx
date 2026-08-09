@@ -3,6 +3,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
+import { apiFetch } from './api';
 import {
   InventoryState,
   ProductId,
@@ -11,7 +12,6 @@ import {
   getLowStockProducts,
   getOutOfStockProducts,
   getTodaysSalesTotal,
-  searchProducts,
   getSaleLineQuantity,
   setSaleLineQuantity,
   setSaleDiscount,
@@ -20,11 +20,8 @@ import {
   cancelSale,
   getRestockLineQuantity,
   setRestockLineQuantity,
-  receiveStock,
-  countStock,
-  adjustStockSubtractive,
-  correctStock,
   calculateSaleSubtotal,
+  searchProducts,
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABELS,
   ADJUSTMENT_REASONS,
@@ -33,6 +30,11 @@ import {
   type AdjustmentReason,
   type PaymentMethod,
 } from './domain';
+import {
+  useStockDelivery,
+  useStockCount,
+  useStockAdjustment,
+} from './hooks/useStock';
 import { createInitialState } from './seed';
 import {
   HomeIcon,
@@ -48,9 +50,11 @@ import {
   MinusIcon,
   ChevronRightIcon,
   ChevronLeftIcon,
+  UploadIcon,
 } from './icons';
 import './styles.css';
 import { LoginScreen } from './screens/login';
+import { ProductList } from './components/ProductList';
 
 // Route type
 type Route =
@@ -64,7 +68,8 @@ type Route =
   | 'sale-completed'
   | 'view-sale'
   | 'cancel-sale-confirm'
-  | 'products';
+  | 'products'
+  | 'import';
 
 // ============================================================================
 // Navigation Component
@@ -624,6 +629,7 @@ function StockChooserScreen({ onNavigate }: StockChooserScreenProps) {
     { route: 'stock-arrived' as Route, icon: PackageIcon, title: 'Stock arrived', description: 'Add quantities you received' },
     { route: 'count-stock' as Route, icon: ClipboardIcon, title: 'Count stock', description: 'Enter what you physically have' },
     { route: 'fix-stock' as Route, icon: WrenchIcon, title: 'Fix stock quantity', description: 'Damage, loss, samples, errors' },
+    { route: 'import' as Route, icon: UploadIcon, title: 'Import from CSV', description: 'Bulk import products from file' },
   ];
 
   return (
@@ -664,10 +670,11 @@ interface StockArrivedScreenProps {
   onStateChange: (state: InventoryState) => void;
 }
 
-function StockArrivedScreen({ state, onRestockDraftChange, onStateChange }: StockArrivedScreenProps) {
+function StockArrivedScreen({ state, onRestockDraftChange }: StockArrivedScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { execute: saveStock } = useStockDelivery();
 
   const filteredProducts = useMemo(() => {
     return searchProducts(state.products, searchQuery);
@@ -686,13 +693,26 @@ function StockArrivedScreen({ state, onRestockDraftChange, onStateChange }: Stoc
     setIsSubmitting(true);
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    const result = receiveStock(state);
+    // Prepare stock delivery items
+    const items = activeLines
+      .filter((l) => l.quantityReceived > 0)
+      .map((l) => ({
+        productId: l.productId,
+        quantity: l.quantityReceived,
+      }));
+
+    const result = await saveStock({ items });
+
     setIsSubmitting(false);
 
-    if (result.ok) {
-      onStateChange(result.value);
+    if (result && result.ok) {
+      // Store success message or navigate
+      alert(`Saved ${result.entries.length} items successfully`);
+      // Clear the draft
+      onRestockDraftChange([]);
     } else {
-      setError(result.error);
+      // Error is already handled by the hook
+      setError('Failed to save stock delivery');
     }
   };
 
@@ -797,10 +817,25 @@ function CountStockScreen({ state, onStateChange }: CountStockScreenProps) {
     }
 
     setError(null);
-    const result = countStock(state, selectedProductId, quantity);
 
-    if (result.ok) {
-      onStateChange(result.value);
+    const { execute: saveStockCount } = useStockCount();
+
+    const result = await saveStockCount({
+      productId: selectedProductId,
+      countedQuantity: quantity,
+    });
+
+    if (result && result.ok) {
+      // Update the local product with the new quantity
+      const newProduct: Product = {
+        ...state.products.get(selectedProductId)!,
+        quantity: result.newQuantity,
+      };
+      const newProducts = new Map(state.products);
+      newProducts.set(selectedProductId, newProduct);
+
+      // Update state with new products map - this is called from parent
+      onStateChange({ ...state, products: newProducts });
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
@@ -808,7 +843,8 @@ function CountStockScreen({ state, onStateChange }: CountStockScreenProps) {
         setCountedQuantity('');
       }, 1500);
     } else {
-      setError(result.error);
+      // Error is already set by the hook
+      setError('Failed to save stock count');
     }
   };
 
@@ -964,15 +1000,26 @@ function FixStockScreen({ state, onStateChange }: FixStockScreenProps) {
 
     setError(null);
 
-    let result;
-    if (isSubtractive) {
-      result = adjustStockSubtractive(state, selectedProductId, reason, qty, note || undefined);
-    } else {
-      result = correctStock(state, selectedProductId, reason, qty, note || undefined);
-    }
+    const { execute: saveStockAdjustment } = useStockAdjustment();
 
-    if (result.ok) {
-      onStateChange(result.value);
+    const result = await saveStockAdjustment({
+      productId: selectedProductId,
+      reason,
+      quantity: qty,
+      note,
+    });
+
+    if (result && result.ok) {
+      // Update the local product with the new quantity
+      const newProduct: Product = {
+        ...state.products.get(selectedProductId)!,
+        quantity: result.newQuantity,
+      };
+      const newProducts = new Map(state.products);
+      newProducts.set(selectedProductId, newProduct);
+
+      // Update state with new products map
+      onStateChange({ ...state, products: newProducts });
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
@@ -981,7 +1028,8 @@ function FixStockScreen({ state, onStateChange }: FixStockScreenProps) {
         setNote('');
       }, 1500);
     } else {
-      setError(result.error);
+      // Error is already set by the hook
+      setError('Failed to save stock adjustment');
     }
   };
 
@@ -1309,21 +1357,309 @@ function CancelSaleConfirmScreen({
 }
 
 // ============================================================================
-// Products Placeholder Screen
+// Import Screen
 // ============================================================================
 
-interface ProductsScreenProps {
-  state: InventoryState;
+interface ImportScreenProps {
   onNavigate: (route: Route) => void;
 }
 
-function ProductsScreen({ state, onNavigate }: ProductsScreenProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const products = useMemo(
-    () => searchProducts(state.products, searchQuery),
-    [state.products, searchQuery],
-  );
+function ImportScreen({ onNavigate }: ImportScreenProps) {
+  const [file, setFile] = useState<File | null>(null);
+  const [previewData, setPreviewData] = useState<any | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [commitLoading, setCommitLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
+  const handleFileSelect = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    if (target.files && target.files[0]) {
+      const selectedFile = target.files[0];
+      setError(null);
+      setPreviewData(null);
+
+      // Validate file type
+      if (!selectedFile.name.endsWith('.csv')) {
+        setError('Please select a CSV file');
+        return;
+      }
+
+      // Validate file size (10MB max)
+      if (selectedFile.size > 10 * 1024 * 1024) {
+        setError('File size exceeds 10MB limit');
+        return;
+      }
+
+      setFile(selectedFile);
+    }
+  };
+
+  const handlePreview = async () => {
+    if (!file) return;
+
+    setError(null);
+    setPreviewLoading(true);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await apiFetch('/import/products/preview', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setPreviewData(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to preview file');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleCommit = async () => {
+    if (!previewData) return;
+
+    setError(null);
+    setCommitLoading(true);
+    setSuccess(false);
+
+    try {
+      const response = await apiFetch('/import/products/commit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ requestId: previewData.requestId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess(true);
+        setPreviewData(null);
+        setFile(null);
+
+        setTimeout(() => {
+          setSuccess(false);
+          onNavigate('home');
+        }, 2000);
+      } else {
+        setError(`Import completed with ${data.failures.length} failures. Review details below.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to commit import');
+    } finally {
+      setCommitLoading(false);
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const template = `name,category,selling_price_minor,quantity,low_stock,sku
+Test Product A,Electronics,50000,10,5,
+Test Product B,Clothing,25000,20,3,
+`;
+
+    const blob = new Blob([template], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'products-import-template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div class="screen">
+      <div class="main">
+        <h1 class="text-2xl font-semibold mb-4">Import products from CSV</h1>
+
+        {!previewData && !success ? (
+          <>
+            <div class="card mb-4">
+              <h3 class="font-semibold mb-2">CSV Template</h3>
+              <p class="text-sm text-ink-light mb-3">
+                Download the template to see the required columns:
+              </p>
+              <div class="flex gap-2">
+                <button
+                  class="btn btn-secondary"
+                  onClick={handleDownloadTemplate}
+                  type="button"
+                >
+                  Download Template
+                </button>
+                <div class="text-sm text-ink-light flex items-center">
+                  <span class="mr-2">Required columns:</span>
+                  <code class="bg-ink-light/10 px-2 py-1 rounded">name,category,selling_price_minor,quantity,low_stock,sku</code>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-4">
+              <div class="upload-area" id="drop-zone">
+                <div class="upload-icon">📄</div>
+                <h3 class="font-semibold mb-2">Upload CSV file</h3>
+                <p class="text-sm text-ink-light mb-4">
+                  Drag and drop your CSV file here, or click to browse
+                </p>
+                <input
+                  type="file"
+                  id="csv-file"
+                  accept=".csv"
+                  onChange={handleFileSelect}
+                  class="hidden"
+                />
+                <button
+                  class="btn btn-primary"
+                  onClick={() => document.getElementById('csv-file')?.click()}
+                  type="button"
+                >
+                  Select CSV file
+                </button>
+              </div>
+            </div>
+
+            {file && (
+              <div class="card">
+                <div class="file-info">
+                  <div class="file-name">{file.name}</div>
+                  <div class="file-size">
+                    {(file.size / 1024).toFixed(2)} KB
+                  </div>
+                </div>
+                <button
+                  class="btn btn-secondary btn-sm mt-3"
+                  onClick={handlePreview}
+                  disabled={previewLoading}
+                  type="button"
+                >
+                  {previewLoading ? 'Previewing...' : 'Preview File'}
+                </button>
+              </div>
+            )}
+          </>
+        ) : success ? (
+          <div class="card success-screen">
+            <div class="success-icon">✓</div>
+            <h2 class="text-xl font-semibold mb-2">Import successful!</h2>
+            <p class="text-ink-light">
+              {previewData?.totals?.inserted || 0} products have been imported
+            </p>
+          </div>
+        ) : previewData && !previewData.totals ? (
+          <div class="card">
+            <h3 class="font-semibold mb-3">Preview Results</h3>
+
+            {previewData.invalidRows && previewData.invalidRows.length > 0 && (
+              <div class="mb-4">
+                <h4 class="text-sm font-semibold mb-2 text-red-600">
+                  Invalid Rows ({previewData.invalidRows.length})
+                </h4>
+                <div class="max-h-60 overflow-y-auto">
+                  {previewData.invalidRows.slice(0, 10).map((row: any) => (
+                    <div key={row.rowNumber} class="mb-1 text-sm">
+                      Row {row.rowNumber}: {row.errors?.join(', ')}
+                    </div>
+                  ))}
+                  {previewData.invalidRows.length > 10 && (
+                    <div class="text-sm text-ink-light">
+                      ...and {previewData.invalidRows.length - 10} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {previewData.duplicateRows && previewData.duplicateRows.length > 0 && (
+              <div class="mb-4">
+                <h4 class="text-sm font-semibold mb-2 text-amber-600">
+                  Duplicate Rows ({previewData.duplicateRows.length})
+                </h4>
+                <div class="max-h-60 overflow-y-auto">
+                  {previewData.duplicateRows.slice(0, 10).map((row: any) => (
+                    <div key={row.rowNumber} class="mb-1 text-sm">
+                      Row {row.rowNumber}: {row.reason}
+                    </div>
+                  ))}
+                  {previewData.duplicateRows.length > 10 && (
+                    <div class="text-sm text-ink-light">
+                      ...and {previewData.duplicateRows.length - 10} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div class="flex items-center gap-2 mb-4">
+              <div class="h-2 flex-1 bg-ink-light/20 rounded overflow-hidden">
+                <div
+                  class="h-full bg-green-600"
+                  style={{ width: `${previewData.totals?.valid ? (previewData.totals.valid / previewData.totals.total) * 100 : 0}%` }}
+                ></div>
+              </div>
+              <span class="text-sm">
+                {previewData.totals?.valid || 0}/{previewData.totals?.total || 0} valid
+              </span>
+            </div>
+
+            {error && <div class="error-message mb-4">{error}</div>}
+
+            <div class="flex gap-2">
+              <button
+                class="btn btn-secondary"
+                onClick={() => {
+                  setPreviewData(null);
+                  setFile(null);
+                  setError(null);
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                class="btn btn-primary"
+                onClick={handleCommit}
+                disabled={commitLoading || previewData.totals?.valid !== previewData.totals?.total}
+                type="button"
+              >
+                {commitLoading ? 'Committing...' : `Import (${previewData.totals?.valid || 0} valid rows)`}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {error && (
+          <div class="error-message">
+            {error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Products Screen
+// ============================================================================
+
+interface ProductsScreenProps {
+  onNavigate: (route: Route) => void;
+}
+
+function ProductsScreen({ onNavigate }: ProductsScreenProps) {
   return (
     <div class="screen">
       <div class="main no-sticky-action">
@@ -1331,27 +1667,7 @@ function ProductsScreen({ state, onNavigate }: ProductsScreenProps) {
           <h1 class="text-2xl font-semibold">Products</h1>
           <button class="btn btn-secondary" onClick={() => onNavigate('stock')} type="button">Update stock</button>
         </div>
-        <div class="search-input">
-          <SearchIcon />
-          <input class="form-input" type="search" placeholder="Search products or SKU" value={searchQuery} onInput={(event) => setSearchQuery((event.target as HTMLInputElement).value)} aria-label="Search products or SKU" />
-        </div>
-        <div class="product-list" aria-live="polite">
-          {products.map((product) => (
-            <div class="list-item product-list-row" key={product.id}>
-              <div>
-                <div class="font-semibold">{product.name}</div>
-                {product.sku && <div class="text-sm text-ink-light code">{product.sku}</div>}
-              </div>
-              <div class="product-list-meta">
-                <span class="font-semibold">{formatInr(product.pricePaise)}</span>
-                <span class={product.quantity === 0 ? 'text-error' : product.quantity <= product.lowStockLevel ? 'text-marigold' : 'text-ink-light'}>
-                  {product.quantity === 0 ? 'Out of stock' : `${product.quantity} in stock`}
-                </span>
-              </div>
-            </div>
-          ))}
-          {products.length === 0 && <div class="empty-state"><h2 class="empty-state-title">No products found</h2><p class="empty-state-message">Try another name or SKU.</p></div>}
-        </div>
+        <ProductList />
       </div>
     </div>
   );
@@ -1441,12 +1757,14 @@ export function App() {
         return <CountStockScreen state={state} onStateChange={setState} />;
       case 'fix-stock':
         return <FixStockScreen state={state} onStateChange={setState} />;
+      case 'import':
+        return <ImportScreen onNavigate={handleNavigate} />;
       case 'view-sale':
         return <ViewSaleScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onNavigate={handleNavigate} />;
       case 'cancel-sale-confirm':
         return <CancelSaleConfirmScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
       case 'products':
-        return <ProductsScreen state={state} onNavigate={handleNavigate} />;
+        return <ProductsScreen onNavigate={handleNavigate} />;
       default:
         return <HomeScreen state={state} onNavigate={handleNavigate} onReset={handleReset} />;
     }

@@ -37,6 +37,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 12,
     lowStockLevel: 2,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.LUNCH_BOX_RED,
@@ -47,6 +48,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 8,
     lowStockLevel: 2,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.LUNCH_BOX_GREEN,
@@ -57,6 +59,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 2, // Low stock (at threshold)
     lowStockLevel: 2,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.LUNCH_BOX_LARGE,
@@ -67,6 +70,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 6,
     lowStockLevel: 3,
     active: true,
+  version: 1,
   },
 
   // Water Bottles - out of stock and variants
@@ -79,6 +83,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 0, // Out of stock
     lowStockLevel: 2,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.WATER_BOTTLE_BLUE,
@@ -89,6 +94,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 3, // Low stock (below threshold of 5)
     lowStockLevel: 5,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.WATER_BOTTLE_SMALL,
@@ -99,6 +105,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 15,
     lowStockLevel: 5,
     active: true,
+  version: 1,
   },
 
   // Storage Sets
@@ -111,6 +118,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 5,
     lowStockLevel: 3,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.STORAGE_SET_SMALL,
@@ -121,6 +129,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 15,
     lowStockLevel: 5,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.STORAGE_SET_MEDIUM,
@@ -131,6 +140,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 1, // Very low stock
     lowStockLevel: 2,
     active: true,
+  version: 1,
   },
 
   // Serving Bowls - high value
@@ -143,6 +153,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 1,
     lowStockLevel: 1,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.SERVING_BOWL_STANDARD,
@@ -153,6 +164,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 7,
     lowStockLevel: 3,
     active: true,
+  version: 1,
   },
 
   // Accessories
@@ -165,6 +177,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 4,
     lowStockLevel: 2,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.JUG_WITH_LID,
@@ -175,6 +188,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 10,
     lowStockLevel: 3,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.SAMPLE_GIFT_ITEM,
@@ -185,6 +199,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 10,
     lowStockLevel: 0,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.KITCHEN_SHELF_ORGANISER,
@@ -195,6 +210,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 3,
     lowStockLevel: 2,
     active: true,
+  version: 1,
   },
   {
     id: PRODUCT_IDS.TRAY_SET_WITH_HANDLE,
@@ -204,7 +220,8 @@ const PRODUCTS: readonly Product[] = [
     pricePaise: 55000, // ₹550
     quantity: 6,
     lowStockLevel: 2,
-    active: false, // Inactive product
+    active: false,
+    version: 1, // Inactive product
   },
   {
     id: PRODUCT_IDS.DISPOSABLE_PLATE_PACK,
@@ -215,6 +232,7 @@ const PRODUCTS: readonly Product[] = [
     quantity: 20,
     lowStockLevel: 5,
     active: true,
+  version: 1,
   },
 ];
 

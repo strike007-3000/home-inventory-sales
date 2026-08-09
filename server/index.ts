@@ -15,6 +15,16 @@ import {
   clearSessionCookies,
   checkRateLimit,
 } from './auth';
+import {
+  handleListProducts,
+  handleCreateProduct,
+  handleUpdateProduct,
+  handleGetProduct,
+  handleDeactivateProduct,
+  handleProductHistory,
+} from './products';
+import { handleStockDelivery, handleStockCount, handleStockAdjustment } from './stock';
+import { handleImportPreview, handleImportCommit } from './import';
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
@@ -29,9 +39,9 @@ export default {
     const path = url.pathname.slice(4); // "/api/products" → "/products"
 
     try {
-      return await handleApi(path, url, request, env);
+      return await routeApi(path, url, request, env);
     } catch (err) {
-      console.error('Unhandled API error:', err);
+      console.error('Unhandled API error');
       return errorResponse('Internal server error', 500);
     }
   },
@@ -41,7 +51,7 @@ export default {
 // API router
 // ============================================================================
 
-async function handleApi(
+async function routeApi(
   path: string,
   url: URL,
   request: Request,
@@ -89,17 +99,24 @@ async function handleApi(
   }
   // /products/:id, /products/:id/history, /products/:id/deactivate, /products/:id/activate
   const productMatch = path.match(/^\/products\/(\d+)(\/(deactivate|activate|history))?$/);
-  if (productMatch && method === 'PUT') {
-    return handleUpdateProduct(Number(productMatch[1]), request, env);
+  const productId = productMatch ? Number(productMatch[1]) : null;
+  if (productMatch && (!Number.isSafeInteger(productId) || productId! <= 0)) {
+    return errorResponse('Invalid product ID', 400);
+  }
+  if (productMatch && !productMatch[2] && method === 'PUT') {
+    return handleUpdateProduct(productId!, request, env);
   }
   if (productMatch && productMatch[3] === 'deactivate' && method === 'POST') {
-    return handleDeactivateProduct(Number(productMatch[1]), false, env);
+    return handleDeactivateProduct(productId!, false, env);
   }
   if (productMatch && productMatch[3] === 'activate' && method === 'POST') {
-    return handleDeactivateProduct(Number(productMatch[1]), true, env);
+    return handleDeactivateProduct(productId!, true, env);
   }
   if (productMatch && productMatch[3] === 'history' && method === 'GET') {
-    return handleProductHistory(Number(productMatch[1]), env);
+    return handleProductHistory(productId!, url, env);
+  }
+  if (productMatch && !productMatch[2] && method === 'GET') {
+    return handleGetProduct(productId!, env);
   }
 
   // Import
@@ -111,13 +128,13 @@ async function handleApi(
   }
 
   // Stock
-  if (path === '/stock/deliveries' && method === 'POST') {
+  if (path === '/stock/delivery' && method === 'POST') {
     return handleStockDelivery(request, env);
   }
-  if (path === '/stock/counts' && method === 'POST') {
+  if (path === '/stock/count' && method === 'POST') {
     return handleStockCount(request, env);
   }
-  if (path === '/stock/adjustments' && method === 'POST') {
+  if (path === '/stock/adjustment' && method === 'POST') {
     return handleStockAdjustment(request, env);
   }
 
@@ -126,11 +143,15 @@ async function handleApi(
     return handleCreateSale(request, env);
   }
   const saleMatch = path.match(/^\/sales\/(\d+)(\/cancel)?$/);
+  const saleId = saleMatch ? Number(saleMatch[1]) : null;
+  if (saleMatch && (!Number.isSafeInteger(saleId) || saleId! <= 0)) {
+    return errorResponse('Invalid sale ID', 400);
+  }
   if (saleMatch && !saleMatch[2] && method === 'GET') {
-    return handleGetSale(Number(saleMatch[1]), env);
+    return handleGetSale(saleId!, env);
   }
   if (saleMatch && saleMatch[2] === '/cancel' && method === 'POST') {
-    return handleCancelSale(Number(saleMatch[1]), request, env);
+    return handleCancelSale(saleId!, request, env);
   }
 
   // Dashboard
@@ -211,46 +232,6 @@ function handleLogout(request: Request): Response {
 }
 
 // --- Stubs for M2–M5 endpoints ---
-
-async function handleListProducts(_url: URL, _env: Env): Promise<Response> {
-  return jsonResponse({ items: [], total: 0 });
-}
-
-async function handleCreateProduct(_request: Request, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
-
-async function handleUpdateProduct(_id: number, _request: Request, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
-
-async function handleDeactivateProduct(_id: number, _activate: boolean, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
-
-async function handleProductHistory(_id: number, _env: Env): Promise<Response> {
-  return jsonResponse({ movements: [] });
-}
-
-async function handleImportPreview(_request: Request, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
-
-async function handleImportCommit(_request: Request, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
-
-async function handleStockDelivery(_request: Request, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
-
-async function handleStockCount(_request: Request, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
-
-async function handleStockAdjustment(_request: Request, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
 
 async function handleCreateSale(_request: Request, _env: Env): Promise<Response> {
   return errorResponse('Not implemented yet', 501);
