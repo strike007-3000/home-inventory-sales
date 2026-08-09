@@ -36,6 +36,7 @@ function getCsrfCookieName(request: Request): string {
 // ============================================================================
 
 const HASH_FORMAT_RE = /^pbkdf2\$sha256\$(\d+)\$([A-Za-z0-9_-]+)\$([A-Za-z0-9_-]+)$/;
+const MAX_PBKDF2_ITERATIONS = 100_000;
 
 function base64UrlToBytes(str: string | undefined): Uint8Array | null {
   if (!str) return null;
@@ -61,7 +62,7 @@ function parsePasswordHash(hash: string): { iterations: number; salt: Uint8Array
   const iterations = parseInt(match[1]!, 10);
   const salt = base64UrlToBytes(match[2]);
   const derived = base64UrlToBytes(match[3]);
-  if (!salt || !derived || !Number.isFinite(iterations) || iterations <= 0) return null;
+  if (!salt || !derived || !Number.isFinite(iterations) || iterations <= 0 || iterations > MAX_PBKDF2_ITERATIONS) return null;
   return { iterations, salt, derived };
 }
 

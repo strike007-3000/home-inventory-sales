@@ -8,9 +8,17 @@ export interface Product {
   readonly sku: string | null;
   readonly name: string;
   readonly category: string | null;
+  readonly colour?: string | null;
+  readonly size?: string | null;
   readonly pricePaise: number;
+  readonly mrpPaise?: number | null;
+  readonly consultantPricePaise?: number | null;
   readonly quantity: number;
+  readonly setStockQuantity?: number;
   readonly lowStockLevel: number;
+  readonly locationId?: number | null;
+  readonly locationName?: string | null;
+  readonly personalUse?: boolean;
   readonly active: boolean;
   readonly version: number;
 }
@@ -36,6 +44,8 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 export interface SaleLine {
   readonly productId: ProductId;
   readonly quantity: number;
+  readonly unitPricePaise?: number;
+  readonly setStockAfter?: number;
 }
 
 export interface SaleDraft {
@@ -50,17 +60,30 @@ export interface SaleLineRecord {
   readonly quantity: number;
   readonly unitPricePaise: number;
   readonly lineTotalPaise: number;
+  readonly setStockBefore?: number;
+  readonly setStockAfter?: number;
 }
 
 export interface SaleRecord {
   readonly id: number;
   readonly saleNumber: string;
   readonly soldAt: string;
+  readonly saleDate?: string;
+  readonly customerName?: string | null;
   readonly lines: readonly SaleLineRecord[];
   readonly subtotalPaise: number;
   readonly discountPaise: number;
   readonly totalPaise: number;
   readonly paymentMethod: PaymentMethod;
+  readonly paidPaise?: number;
+  readonly balancePaise?: number;
+  readonly paymentStatus?: 'unpaid' | 'partial' | 'paid';
+  readonly payments?: readonly {
+    readonly id: number;
+    readonly amountPaise: number;
+    readonly paymentMethod: string;
+    readonly receivedAt: string;
+  }[];
   readonly status: 'completed' | 'cancelled';
   readonly cancelledAt?: string;
   readonly cancellationReason?: string;
@@ -290,7 +313,7 @@ export function calculateSaleSubtotal(
     if (line.quantity > product.quantity) {
       return Err(`Only ${product.quantity} ${product.name} available, but ${line.quantity} requested`);
     }
-    const lineTotal = product.pricePaise * line.quantity;
+    const lineTotal = (line.unitPricePaise ?? product.pricePaise) * line.quantity;
     subtotal += lineTotal;
   }
 
@@ -349,6 +372,14 @@ export function setSaleLineQuantity(
     index === existingIndex ? { ...line, quantity } : line
   );
   return { ...draft, lines: newLines };
+}
+
+export function setSaleLineUnitPrice(draft: SaleDraft, productId: ProductId, unitPricePaise: number): SaleDraft {
+  return { ...draft, lines: draft.lines.map((line) => line.productId === productId ? { ...line, unitPricePaise } : line) };
+}
+
+export function setSaleLineSetStock(draft: SaleDraft, productId: ProductId, setStockAfter: number): SaleDraft {
+  return { ...draft, lines: draft.lines.map((line) => line.productId === productId ? { ...line, setStockAfter } : line) };
 }
 
 /**
@@ -480,19 +511,23 @@ export function completeSale(
     const product = newProducts.get(line.productId);
     if (!product) continue; // Already validated above
 
-    const lineTotal = product.pricePaise * line.quantity;
+    const unitPricePaise = line.unitPricePaise ?? product.pricePaise;
+    const lineTotal = unitPricePaise * line.quantity;
     lineRecords.push({
       productId: product.id,
       productName: product.name,
       quantity: line.quantity,
-      unitPricePaise: product.pricePaise,
+      unitPricePaise,
       lineTotalPaise: lineTotal,
+      setStockBefore: product.setStockQuantity ?? 0,
+      setStockAfter: line.setStockAfter ?? product.setStockQuantity ?? 0,
     });
 
     // Reduce stock
     newProducts.set(line.productId, {
       ...product,
       quantity: product.quantity - line.quantity,
+      setStockQuantity: line.setStockAfter ?? product.setStockQuantity ?? 0,
     });
   }
 

@@ -22,9 +22,12 @@ import {
   handleGetProduct,
   handleDeactivateProduct,
   handleProductHistory,
+  handleListLocations,
 } from './products';
 import { handleStockDelivery, handleStockCount, handleStockAdjustment } from './stock';
 import { handleImportPreview, handleImportCommit } from './import';
+import { handleCancelSale, handleCreateSale, handleGetSale, handleListSales, handleRecordPayment } from './sales';
+import { handleListLids } from './lids';
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
@@ -41,7 +44,9 @@ export default {
     try {
       return await routeApi(path, url, request, env);
     } catch (err) {
-      console.error('Unhandled API error');
+      console.error('Unhandled API error', err instanceof Error
+        ? { name: err.name, message: err.message, stack: err.stack }
+        : { valueType: typeof err });
       return errorResponse('Internal server error', 500);
     }
   },
@@ -97,6 +102,12 @@ async function routeApi(
   if (path === '/products' && method === 'POST') {
     return handleCreateProduct(request, env);
   }
+  if (path === '/locations' && method === 'GET') {
+    return handleListLocations(env);
+  }
+  if (path === '/lids' && method === 'GET') {
+    return handleListLids(url, env);
+  }
   // /products/:id, /products/:id/history, /products/:id/deactivate, /products/:id/activate
   const productMatch = path.match(/^\/products\/(\d+)(\/(deactivate|activate|history))?$/);
   const productId = productMatch ? Number(productMatch[1]) : null;
@@ -142,7 +153,10 @@ async function routeApi(
   if (path === '/sales' && method === 'POST') {
     return handleCreateSale(request, env);
   }
-  const saleMatch = path.match(/^\/sales\/(\d+)(\/cancel)?$/);
+  if (path === '/sales' && method === 'GET') {
+    return handleListSales(url, env);
+  }
+  const saleMatch = path.match(/^\/sales\/(\d+)(\/(cancel|payments))?$/);
   const saleId = saleMatch ? Number(saleMatch[1]) : null;
   if (saleMatch && (!Number.isSafeInteger(saleId) || saleId! <= 0)) {
     return errorResponse('Invalid sale ID', 400);
@@ -153,10 +167,13 @@ async function routeApi(
   if (saleMatch && saleMatch[2] === '/cancel' && method === 'POST') {
     return handleCancelSale(saleId!, request, env);
   }
+  if (saleMatch && saleMatch[2] === '/payments' && method === 'POST') {
+    return handleRecordPayment(saleId!, request, env);
+  }
 
   // Dashboard
   if (path === '/dashboard' && method === 'GET') {
-    return handleDashboard(env);
+    return handleDashboard(url, env);
   }
 
   // Export
@@ -233,21 +250,17 @@ function handleLogout(request: Request): Response {
 
 // --- Stubs for M2–M5 endpoints ---
 
-async function handleCreateSale(_request: Request, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
-
-async function handleGetSale(_id: number, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
-
-async function handleCancelSale(_id: number, _request: Request, _env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
-}
-
-async function handleDashboard(_env: Env): Promise<Response> {
+async function handleDashboard(url: URL, env: Env): Promise<Response> {
+  const requestedDate = url.searchParams.get('date') ?? new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+    return errorResponse('Dashboard date must use YYYY-MM-DD', 400, 'date');
+  }
+  const today = await env.DB.prepare(
+    `SELECT COUNT(*) AS count, COALESCE(SUM(total_minor), 0) AS total_minor
+     FROM sales WHERE sale_date = ? AND status = 'completed'`,
+  ).bind(requestedDate).first<{ count: number; total_minor: number }>();
   return jsonResponse({
-    today: { count: 0, totalPaise: 0 },
+    today: { count: today?.count ?? 0, totalPaise: today?.total_minor ?? 0 },
     lowStock: [],
     outOfStock: [],
     needsAttention: [],

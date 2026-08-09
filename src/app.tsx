@@ -3,7 +3,8 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { apiFetch } from './api';
+import { apiGetJson, apiPostJson } from './api';
+import type { CreateSaleRequest, DashboardDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO } from '../shared/contracts';
 import {
   InventoryState,
   ProductId,
@@ -14,10 +15,10 @@ import {
   getTodaysSalesTotal,
   getSaleLineQuantity,
   setSaleLineQuantity,
+  setSaleLineUnitPrice,
+  setSaleLineSetStock,
   setSaleDiscount,
   setSalePaymentMethod,
-  completeSale,
-  cancelSale,
   getRestockLineQuantity,
   setRestockLineQuantity,
   calculateSaleSubtotal,
@@ -35,7 +36,7 @@ import {
   useStockCount,
   useStockAdjustment,
 } from './hooks/useStock';
-import { createInitialState } from './seed';
+import { createEmptyInventoryState } from './state';
 import {
   HomeIcon,
   SellIcon,
@@ -50,16 +51,18 @@ import {
   MinusIcon,
   ChevronRightIcon,
   ChevronLeftIcon,
-  UploadIcon,
+  LogoutIcon,
 } from './icons';
 import './styles.css';
 import { LoginScreen } from './screens/login';
 import { ProductList } from './components/ProductList';
+import { LidLookup } from './components/LidLookup';
 
 // Route type
 type Route =
   | 'home'
   | 'sell'
+  | 'sales'
   | 'stock'
   | 'stock-arrived'
   | 'count-stock'
@@ -69,7 +72,7 @@ type Route =
   | 'view-sale'
   | 'cancel-sale-confirm'
   | 'products'
-  | 'import';
+  | 'lids';
 
 // ============================================================================
 // Navigation Component
@@ -78,17 +81,20 @@ type Route =
 interface NavProps {
   currentRoute: Route;
   onNavigate: (route: Route) => void;
+  onLogout: () => Promise<void>;
+  isLoggingOut: boolean;
 }
 
-function Nav({ currentRoute, onNavigate }: NavProps) {
+function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
   const navItems: { route: Route; label: string; Icon: () => JSX.Element }[] = [
     { route: 'home', label: 'Home', Icon: HomeIcon },
-    { route: 'sell', label: 'Sell', Icon: SellIcon },
+    { route: 'sales', label: 'Sales', Icon: SellIcon },
     { route: 'products', label: 'Products', Icon: ProductsIcon },
+    { route: 'lids', label: 'LIDS', Icon: SearchIcon },
     { route: 'stock', label: 'Stock', Icon: StockIcon },
   ];
-  const activeRoute: Route = ['review-sale', 'sale-completed'].includes(currentRoute)
-    ? 'sell'
+  const activeRoute: Route = ['sell', 'review-sale', 'sale-completed', 'view-sale', 'cancel-sale-confirm'].includes(currentRoute)
+    ? 'sales'
     : ['stock-arrived', 'count-stock', 'fix-stock'].includes(currentRoute)
       ? 'stock'
       : currentRoute;
@@ -114,6 +120,10 @@ function Nav({ currentRoute, onNavigate }: NavProps) {
           </button>
         ))}
       </div>
+      <button class="nav-item nav-logout" onClick={() => void onLogout()} disabled={isLoggingOut} type="button">
+        <span class="nav-icon" aria-hidden="true"><LogoutIcon /></span>
+        <span>{isLoggingOut ? 'Signing out…' : 'Logout'}</span>
+      </button>
     </nav>
   );
 }
@@ -125,32 +135,32 @@ function Nav({ currentRoute, onNavigate }: NavProps) {
 interface HomeScreenProps {
   state: InventoryState;
   onNavigate: (route: Route) => void;
-  onReset: () => void;
+  onLogout: () => Promise<void>;
+  isLoggingOut: boolean;
 }
 
-function HomeScreen({ state, onNavigate, onReset }: HomeScreenProps) {
+function HomeScreen({ state, onNavigate, onLogout, isLoggingOut }: HomeScreenProps) {
   const lowStock = getLowStockProducts(state);
   const outOfStock = getOutOfStockProducts(state);
-  const todaySales = getTodaysSalesTotal(state);
+  const localToday = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  }, []);
+  const fallbackTodaySales = getTodaysSalesTotal(state);
+  const [todaySales, setTodaySales] = useState(fallbackTodaySales);
 
-  const handleReset = () => {
-    if (confirm('Reset all sample data? This cannot be undone.')) {
-      onReset();
-    }
-  };
+  useEffect(() => {
+    apiGetJson<DashboardDTO>(`/dashboard?date=${localToday}`)
+      .then((dashboard) => setTodaySales(dashboard.today))
+      .catch(() => setTodaySales(fallbackTodaySales));
+  }, [localToday, fallbackTodaySales.count, fallbackTodaySales.totalPaise]);
 
   return (
     <div class="screen">
       <div class="main no-sticky-action">
         <div class="page-header">
           <h1 class="text-2xl font-semibold">Home</h1>
-          <button
-            class="btn btn-primary btn-lg"
-            onClick={() => onNavigate('sell')}
-            type="button"
-          >
-            Record a sale
-          </button>
+          <button class="btn btn-primary btn-lg" onClick={() => onNavigate('sell')} type="button">Record a sale</button>
         </div>
 
         {/* Today's sales */}
@@ -159,7 +169,7 @@ function HomeScreen({ state, onNavigate, onReset }: HomeScreenProps) {
           <div class="card">
             <div class="summary-value">{todaySales.count} {todaySales.count === 1 ? 'sale' : 'sales'}</div>
             <div class="summary-label">
-              {todaySales.totalPaise > 0 ? formatInr(todaySales.totalPaise) + ' received' : 'No sales yet'}
+              {todaySales.totalPaise > 0 ? formatInr(todaySales.totalPaise) + ' in sales' : 'No sales yet'}
             </div>
           </div>
         </section>
@@ -204,11 +214,9 @@ function HomeScreen({ state, onNavigate, onReset }: HomeScreenProps) {
           </section>
         )}
 
-        {/* Footer */}
-        <div class="text-center text-sm text-ink-light mt-6">
-          <p>Sample data · Updated just now</p>
-          <button class="btn btn-ghost btn-sm" onClick={handleReset} type="button">
-            Reset sample data
+        <div class="mobile-logout mt-6">
+          <button class="btn btn-secondary" onClick={() => void onLogout()} disabled={isLoggingOut} type="button">
+            <LogoutIcon /> {isLoggingOut ? 'Signing out…' : 'Logout'}
           </button>
         </div>
       </div>
@@ -303,6 +311,119 @@ function ProductCard({
           After saving: <span class="font-semibold">{showAfterQuantity}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Sales History Screen
+// ============================================================================
+
+type SalesStatusFilter = 'all' | 'unpaid' | 'partial' | 'paid' | 'cancelled';
+
+interface SalesHistoryScreenProps {
+  state: InventoryState;
+  onStateChange: (state: InventoryState) => void;
+  onNavigate: (route: Route) => void;
+  setLastCompletedSaleId: (id: number) => void;
+}
+
+function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompletedSaleId }: SalesHistoryScreenProps) {
+  const [sales, setSales] = useState<readonly SaleSummaryDTO[]>([]);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<SalesStatusFilter>('all');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSales = useCallback(async (search = '') => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await apiGetJson<{ items: SaleSummaryDTO[] }>(`/sales?limit=500&q=${encodeURIComponent(search)}`);
+      setSales(response.items);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Sales could not be loaded');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadSales(); }, [loadSales]);
+
+  const visibleSales = sales.filter((sale) => statusFilter === 'all'
+    || (statusFilter === 'cancelled' ? sale.status === 'cancelled' : sale.status === 'completed' && sale.paymentStatus === statusFilter));
+
+  const openSale = async (id: number) => {
+    setError(null);
+    try {
+      const sale = await apiGetJson<SaleDTO>(`/sales/${id}`);
+      const record = { ...sale, paymentMethod: sale.paymentMethod as PaymentMethod };
+      onStateChange({ ...state, sales: [...state.sales.filter((item) => item.id !== id), record] });
+      setLastCompletedSaleId(id);
+      onNavigate('view-sale');
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : 'Sale could not be opened');
+    }
+  };
+
+  const statusLabel = (sale: SaleSummaryDTO) => sale.status === 'cancelled'
+    ? 'Cancelled'
+    : sale.paymentStatus === 'partial' ? 'Partially paid'
+      : sale.paymentStatus === 'unpaid' ? 'Unpaid' : 'Paid';
+
+  return (
+    <div class="screen">
+      <div class="main no-sticky-action">
+        <div class="page-header">
+          <h1 class="text-2xl font-semibold">Sales</h1>
+          <button class="btn btn-primary btn-lg" type="button" onClick={() => onNavigate('sell')}>Record a sale</button>
+        </div>
+
+        <form class="sales-search-form" onSubmit={(event) => { event.preventDefault(); void loadSales(query); }}>
+          <div class="search-input">
+            <SearchIcon />
+            <input type="search" class="form-input" value={query}
+              placeholder="Search customer or sale number..." aria-label="Search sales"
+              onInput={(event) => setQuery((event.target as HTMLInputElement).value)} />
+          </div>
+          <div class="sales-search-actions">
+            <button class="btn btn-primary" type="submit">Search</button>
+            <button class="btn btn-secondary" type="button" onClick={() => { setQuery(''); void loadSales(); }}>Reset</button>
+          </div>
+        </form>
+
+        <div class="form-group sales-filter mt-4">
+          <label class="form-label" for="sales-status">Payment status</label>
+          <select id="sales-status" class="form-input" value={statusFilter}
+            onInput={(event) => setStatusFilter((event.target as HTMLSelectElement).value as SalesStatusFilter)}>
+            <option value="all">All sales</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="partial">Partially paid</option>
+            <option value="paid">Paid</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+
+        {error && <div class="error-message mt-4" role="alert">{error}</div>}
+        {isLoading ? <p class="text-ink-light mt-4">Loading sales…</p> : visibleSales.length === 0 ? (
+          <div class="empty-state"><h2 class="empty-state-title">No sales found</h2><p class="empty-state-message">Try another search or filter.</p></div>
+        ) : (
+          <div class="mt-4">
+            {visibleSales.map((sale) => (
+              <button key={sale.id} class="card card-clickable w-full text-left" type="button" onClick={() => void openSale(sale.id)}>
+                <div class="flex justify-between items-start gap-3">
+                  <div>
+                    <div class="font-semibold">{sale.customerName || 'Walk-in customer'}</div>
+                    <div class="text-sm text-ink-light">{sale.saleNumber} · {new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</div>
+                    <div class="text-sm mt-2">{statusLabel(sale)}{sale.balancePaise > 0 && sale.status !== 'cancelled' ? ` · ${formatInr(sale.balancePaise)} due` : ''}</div>
+                  </div>
+                  <div class="font-semibold">{formatInr(sale.totalPaise)}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -416,6 +537,13 @@ function ReviewSaleScreen({
 }: ReviewSaleScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [receivedPaise, setReceivedPaise] = useState<number | null>(null);
+  const [saleDate, setSaleDate] = useState(() => {
+    const now = new Date();
+    const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+    return localDate.toISOString().slice(0, 10);
+  });
 
   const { saleDraft, products } = state;
 
@@ -423,6 +551,7 @@ function ReviewSaleScreen({
   const subtotalResult = calculateSaleSubtotal(saleDraft, products);
   const subtotalPaise = subtotalResult.ok ? subtotalResult.value : 0;
   const totalPaise = Math.max(0, subtotalPaise - saleDraft.discountPaise);
+  const effectiveReceivedPaise = receivedPaise ?? totalPaise;
 
   // Get line items with product details
   const lineItems = saleDraft.lines
@@ -432,10 +561,12 @@ function ReviewSaleScreen({
       return {
         product,
         quantity: line.quantity,
-        lineTotal: product.pricePaise * line.quantity,
+        unitPricePaise: line.unitPricePaise ?? product.pricePaise,
+        setStockAfter: line.setStockAfter ?? product.setStockQuantity ?? 0,
+        lineTotal: (line.unitPricePaise ?? product.pricePaise) * line.quantity,
       };
     })
-    .filter((item): item is { product: Product; quantity: number; lineTotal: number } => item !== null);
+    .filter((item): item is { product: Product; quantity: number; unitPricePaise: number; setStockAfter: number; lineTotal: number } => item !== null);
 
   const handleDiscountChange = (e: Event) => {
     const value = (e.target as HTMLInputElement).value;
@@ -453,18 +584,33 @@ function ReviewSaleScreen({
     setError(null);
     setIsSubmitting(true);
 
-    // Simulate a brief delay for UX
-    await new Promise((resolve) => setTimeout(resolve, 300));
-
-    const result = completeSale(state, saleIdempotencyKey);
-    setIsSubmitting(false);
-
-    if (result.ok) {
-      setLastCompletedSaleId(result.value.sales[result.value.sales.length - 1]?.id ?? 0);
-      onStateChange(result.value);
+    try {
+      const request: CreateSaleRequest = {
+        idempotencyKey: saleIdempotencyKey,
+        saleDate,
+        customerName: customerName.trim() || null,
+        lines: lineItems.map(({ product, quantity, unitPricePaise, setStockAfter }) => ({
+          productId: product.id, quantity, unitPricePaise, setStockAfter,
+        })),
+        discountPaise: saleDraft.discountPaise,
+        paymentMethod: saleDraft.paymentMethod,
+        receivedPaise: effectiveReceivedPaise,
+      };
+      const sale = await apiPostJson<SaleDTO>('/sales', request);
+      const productsResponse = await apiGetJson<{ items: Product[] }>('/products?active=all&limit=1000');
+      const record = { ...sale, paymentMethod: sale.paymentMethod as PaymentMethod };
+      setLastCompletedSaleId(sale.id);
+      onStateChange({
+        ...state,
+        products: new Map(productsResponse.items.map((product) => [product.id, product])),
+        sales: [...state.sales.filter((item) => item.id !== sale.id), record],
+        saleDraft: { lines: [], discountPaise: 0, paymentMethod: 'upi' },
+      });
       onNavigate('sale-completed');
-    } else {
-      setError(result.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sale could not be saved');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -473,8 +619,34 @@ function ReviewSaleScreen({
       <div class="main">
         <h1 class="text-2xl font-semibold mb-4">Review sale</h1>
 
+        <div class="card">
+          <div class="form-group">
+            <label class="form-label" for="customer-name">Customer name (optional)</label>
+            <input
+              id="customer-name"
+              type="text"
+              class="form-input"
+              value={customerName}
+              maxLength={200}
+              placeholder="Enter customer name"
+              onInput={(event) => setCustomerName((event.target as HTMLInputElement).value)}
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="sale-date">Sale date</label>
+            <input
+              id="sale-date"
+              type="date"
+              class="form-input"
+              value={saleDate}
+              onInput={(event) => setSaleDate((event.target as HTMLInputElement).value)}
+              required
+            />
+          </div>
+        </div>
+
         {/* Line items */}
-        {lineItems.map(({ product, quantity, lineTotal }) => (
+        {lineItems.map(({ product, quantity, unitPricePaise, setStockAfter, lineTotal }) => (
           <div key={product.id} class="card">
             <div class="flex justify-between items-start">
               <div>
@@ -482,6 +654,22 @@ function ReviewSaleScreen({
                 <div class="text-sm text-ink-light">Qty: {quantity}</div>
               </div>
               <div class="font-semibold">{formatInr(lineTotal)}</div>
+            </div>
+            <div class="form-group mt-3">
+              <label class="form-label" for={`price-${product.id}`}>Price to multiply by QTY (₹)</label>
+              <input id={`price-${product.id}`} type="number" class="form-input"
+                min={0} step="0.01" inputMode="decimal" value={unitPricePaise / 100}
+                onInput={(event) => onSaleDraftChange(setSaleLineUnitPrice(saleDraft, product.id,
+                  Math.max(0, Math.round((parseFloat((event.target as HTMLInputElement).value) || 0) * 100))))} />
+              <div class="text-sm text-ink-light mt-2">Catalogue SRP is per Stock/set. Change this price when selling individual pieces.</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for={`set-stock-${product.id}`}>Stock/set count after sale</label>
+              <input id={`set-stock-${product.id}`} type="number" class="form-input"
+                min={0} step="0.01" inputMode="decimal" value={setStockAfter}
+                onInput={(event) => onSaleDraftChange(setSaleLineSetStock(saleDraft, product.id,
+                  Math.max(0, parseFloat((event.target as HTMLInputElement).value) || 0)))} />
+              <div class="text-sm text-ink-light mt-2">Before sale: {product.setStockQuantity ?? 0}</div>
             </div>
           </div>
         ))}
@@ -515,6 +703,27 @@ function ReviewSaleScreen({
 
         {/* Payment method */}
         <div class="card">
+          <div class="form-group">
+            <label class="form-label" for="amount-received">Amount received now (₹)</label>
+            <input
+              id="amount-received"
+              type="number"
+              class="form-input"
+              min={0}
+              max={totalPaise / 100}
+              step="0.01"
+              inputMode="decimal"
+              value={effectiveReceivedPaise / 100}
+              onInput={(event) => setReceivedPaise(Math.max(0, Math.round((parseFloat((event.target as HTMLInputElement).value) || 0) * 100)))}
+            />
+            <div class="text-sm text-ink-light mt-2">
+              {effectiveReceivedPaise === 0
+                ? 'Marked unpaid — payment can be added later.'
+                : effectiveReceivedPaise < totalPaise
+                  ? `${formatInr(totalPaise - effectiveReceivedPaise)} will remain due.`
+                  : 'Fully paid.'}
+            </div>
+          </div>
           <label class="form-label">Payment method</label>
           <div class="payment-methods" role="group" aria-label="Payment method">
             {PAYMENT_METHODS.map((method) => (
@@ -595,7 +804,10 @@ function SaleCompletedScreen({ state, lastCompletedSaleId, onNavigate }: SaleCom
           <h1 class="result-title">Sale saved</h1>
           <p class="result-message">
             {itemCount} {itemCount === 1 ? 'item' : 'items'} sold<br />
-            {formatInr(sale.totalPaise)} received by {PAYMENT_METHOD_LABELS[sale.paymentMethod]}<br />
+            {sale.customerName ? `${sale.customerName} · ` : ''}{new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}<br />
+            {sale.paymentStatus === 'paid'
+              ? `${formatInr(sale.paidPaise ?? sale.totalPaise)} received`
+              : `${formatInr(sale.paidPaise ?? 0)} received · ${formatInr(sale.balancePaise ?? sale.totalPaise)} due`}<br />
             Stock has been updated
           </p>
           <div class="result-actions">
@@ -629,7 +841,6 @@ function StockChooserScreen({ onNavigate }: StockChooserScreenProps) {
     { route: 'stock-arrived' as Route, icon: PackageIcon, title: 'Stock arrived', description: 'Add quantities you received' },
     { route: 'count-stock' as Route, icon: ClipboardIcon, title: 'Count stock', description: 'Enter what you physically have' },
     { route: 'fix-stock' as Route, icon: WrenchIcon, title: 'Fix stock quantity', description: 'Damage, loss, samples, errors' },
-    { route: 'import' as Route, icon: UploadIcon, title: 'Import from CSV', description: 'Bulk import products from file' },
   ];
 
   return (
@@ -1178,10 +1389,15 @@ function FixStockScreen({ state, onStateChange }: FixStockScreenProps) {
 interface ViewSaleScreenProps {
   state: InventoryState;
   lastCompletedSaleId: number;
+  onStateChange: (state: InventoryState) => void;
   onNavigate: (route: Route) => void;
 }
 
-function ViewSaleScreen({ state, lastCompletedSaleId, onNavigate }: ViewSaleScreenProps) {
+function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate }: ViewSaleScreenProps) {
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('upi');
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
   const sale = state.sales.find((s) => s.id === lastCompletedSaleId);
 
   if (!sale) {
@@ -1199,6 +1415,32 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onNavigate }: ViewSaleScre
     );
   }
 
+  const balancePaise = sale.balancePaise ?? 0;
+  const handleAddPayment = async () => {
+    const amountPaise = Math.round((parseFloat(paymentAmount) || 0) * 100);
+    setPaymentError(null);
+    if (amountPaise <= 0 || amountPaise > balancePaise) {
+      setPaymentError(`Enter an amount between ₹0.01 and ${formatInr(balancePaise)}.`);
+      return;
+    }
+    setIsSavingPayment(true);
+    try {
+      const request: RecordPaymentRequest = { amountPaise, paymentMethod };
+      const updated = await apiPostJson<SaleDTO>(`/sales/${sale.id}/payments`, request);
+      const record = {
+        ...updated,
+        paymentMethod: updated.paymentMethod as PaymentMethod,
+        payments: updated.payments.map((payment) => ({ ...payment, paymentMethod: payment.paymentMethod as PaymentMethod })),
+      };
+      onStateChange({ ...state, sales: state.sales.map((item) => item.id === sale.id ? record : item) });
+      setPaymentAmount('');
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : 'Payment could not be saved');
+    } finally {
+      setIsSavingPayment(false);
+    }
+  };
+
   return (
     <div class="screen">
       <div class="main no-sticky-action">
@@ -1208,7 +1450,9 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onNavigate }: ViewSaleScre
 
         <h1 class="text-2xl font-semibold mb-2">Sale #{sale.saleNumber}</h1>
         <p class="text-sm text-ink-light mb-4">
-          {new Date(sale.soldAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+          {sale.customerName && <>{sale.customerName}<br /></>}
+          Sale date: {new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}<br />
+          Recorded: {new Date(sale.soldAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
         </p>
 
         {sale.lines.map((line) => (
@@ -1228,10 +1472,41 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onNavigate }: ViewSaleScre
             <span>Total</span>
             <span class="font-semibold">{formatInr(sale.totalPaise)}</span>
           </div>
-          <div class="text-sm text-ink-light">
-            Paid by {PAYMENT_METHOD_LABELS[sale.paymentMethod]}
+          <div class="flex justify-between mb-2">
+            <span>Received</span>
+            <span>{formatInr(sale.paidPaise ?? sale.totalPaise)}</span>
+          </div>
+          <div class="flex justify-between font-semibold">
+            <span>Balance due</span>
+            <span>{formatInr(balancePaise)}</span>
           </div>
         </div>
+
+        {sale.status === 'completed' && balancePaise > 0 && (
+          <div class="card mt-4">
+            <h2 class="text-lg font-semibold mb-3">Add payment</h2>
+            <div class="form-group">
+              <label class="form-label" for="later-payment">Amount received (₹)</label>
+              <input id="later-payment" type="number" class="form-input" min={0.01}
+                max={balancePaise / 100} step="0.01" inputMode="decimal" value={paymentAmount}
+                placeholder={(balancePaise / 100).toFixed(2)}
+                onInput={(event) => setPaymentAmount((event.target as HTMLInputElement).value)} />
+            </div>
+            <div class="payment-methods" role="group" aria-label="Payment method">
+              {PAYMENT_METHODS.map((method) => (
+                <button key={method} type="button" class={`payment-pill ${paymentMethod === method ? 'selected' : ''}`}
+                  aria-pressed={paymentMethod === method} onClick={() => setPaymentMethod(method)}>
+                  {PAYMENT_METHOD_LABELS[method]}
+                </button>
+              ))}
+            </div>
+            {paymentError && <div class="error-message mt-3" role="alert">{paymentError}</div>}
+            <button class="btn btn-primary btn-lg mt-4" type="button" disabled={isSavingPayment}
+              onClick={() => void handleAddPayment()}>
+              {isSavingPayment ? 'Saving…' : 'Save payment'}
+            </button>
+          </div>
+        )}
 
         {sale.status === 'completed' && (
           <button
@@ -1294,14 +1569,20 @@ function CancelSaleConfirmScreen({
 
   const handleCancel = async () => {
     setError(null);
-    const result = cancelSale(state, sale.id, reason);
-
-    if (result.ok) {
-      onStateChange(result.value);
+    try {
+      const cancelled = await apiPostJson<SaleDTO>(`/sales/${sale.id}/cancel`, { reason });
+      const productsResponse = await apiGetJson<{ items: Product[] }>('/products?active=all&limit=1000');
+      onStateChange({
+        ...state,
+        products: new Map(productsResponse.items.map((product) => [product.id, product])),
+        sales: state.sales.map((item) => item.id === sale.id
+          ? { ...cancelled, paymentMethod: cancelled.paymentMethod as PaymentMethod }
+          : item),
+      });
       setSuccess(true);
       setTimeout(() => onNavigate('home'), 1500);
-    } else {
-      setError(result.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sale could not be cancelled');
     }
   };
 
@@ -1357,301 +1638,6 @@ function CancelSaleConfirmScreen({
 }
 
 // ============================================================================
-// Import Screen
-// ============================================================================
-
-interface ImportScreenProps {
-  onNavigate: (route: Route) => void;
-}
-
-function ImportScreen({ onNavigate }: ImportScreenProps) {
-  const [file, setFile] = useState<File | null>(null);
-  const [previewData, setPreviewData] = useState<any | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [commitLoading, setCommitLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-
-  const handleFileSelect = (e: Event) => {
-    const target = e.target as HTMLInputElement;
-    if (target.files && target.files[0]) {
-      const selectedFile = target.files[0];
-      setError(null);
-      setPreviewData(null);
-
-      // Validate file type
-      if (!selectedFile.name.endsWith('.csv')) {
-        setError('Please select a CSV file');
-        return;
-      }
-
-      // Validate file size (10MB max)
-      if (selectedFile.size > 10 * 1024 * 1024) {
-        setError('File size exceeds 10MB limit');
-        return;
-      }
-
-      setFile(selectedFile);
-    }
-  };
-
-  const handlePreview = async () => {
-    if (!file) return;
-
-    setError(null);
-    setPreviewLoading(true);
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const response = await apiFetch('/import/products/preview', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
-        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      setPreviewData(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to preview file');
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-
-  const handleCommit = async () => {
-    if (!previewData) return;
-
-    setError(null);
-    setCommitLoading(true);
-    setSuccess(false);
-
-    try {
-      const response = await apiFetch('/import/products/commit', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ requestId: previewData.requestId }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
-        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success) {
-        setSuccess(true);
-        setPreviewData(null);
-        setFile(null);
-
-        setTimeout(() => {
-          setSuccess(false);
-          onNavigate('home');
-        }, 2000);
-      } else {
-        setError(`Import completed with ${data.failures.length} failures. Review details below.`);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to commit import');
-    } finally {
-      setCommitLoading(false);
-    }
-  };
-
-  const handleDownloadTemplate = () => {
-    const template = `name,category,selling_price_minor,quantity,low_stock,sku
-Test Product A,Electronics,50000,10,5,
-Test Product B,Clothing,25000,20,3,
-`;
-
-    const blob = new Blob([template], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'products-import-template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div class="screen">
-      <div class="main">
-        <h1 class="text-2xl font-semibold mb-4">Import products from CSV</h1>
-
-        {!previewData && !success ? (
-          <>
-            <div class="card mb-4">
-              <h3 class="font-semibold mb-2">CSV Template</h3>
-              <p class="text-sm text-ink-light mb-3">
-                Download the template to see the required columns:
-              </p>
-              <div class="flex gap-2">
-                <button
-                  class="btn btn-secondary"
-                  onClick={handleDownloadTemplate}
-                  type="button"
-                >
-                  Download Template
-                </button>
-                <div class="text-sm text-ink-light flex items-center">
-                  <span class="mr-2">Required columns:</span>
-                  <code class="bg-ink-light/10 px-2 py-1 rounded">name,category,selling_price_minor,quantity,low_stock,sku</code>
-                </div>
-              </div>
-            </div>
-
-            <div class="card mb-4">
-              <div class="upload-area" id="drop-zone">
-                <div class="upload-icon">📄</div>
-                <h3 class="font-semibold mb-2">Upload CSV file</h3>
-                <p class="text-sm text-ink-light mb-4">
-                  Drag and drop your CSV file here, or click to browse
-                </p>
-                <input
-                  type="file"
-                  id="csv-file"
-                  accept=".csv"
-                  onChange={handleFileSelect}
-                  class="hidden"
-                />
-                <button
-                  class="btn btn-primary"
-                  onClick={() => document.getElementById('csv-file')?.click()}
-                  type="button"
-                >
-                  Select CSV file
-                </button>
-              </div>
-            </div>
-
-            {file && (
-              <div class="card">
-                <div class="file-info">
-                  <div class="file-name">{file.name}</div>
-                  <div class="file-size">
-                    {(file.size / 1024).toFixed(2)} KB
-                  </div>
-                </div>
-                <button
-                  class="btn btn-secondary btn-sm mt-3"
-                  onClick={handlePreview}
-                  disabled={previewLoading}
-                  type="button"
-                >
-                  {previewLoading ? 'Previewing...' : 'Preview File'}
-                </button>
-              </div>
-            )}
-          </>
-        ) : success ? (
-          <div class="card success-screen">
-            <div class="success-icon">✓</div>
-            <h2 class="text-xl font-semibold mb-2">Import successful!</h2>
-            <p class="text-ink-light">
-              {previewData?.totals?.inserted || 0} products have been imported
-            </p>
-          </div>
-        ) : previewData && !previewData.totals ? (
-          <div class="card">
-            <h3 class="font-semibold mb-3">Preview Results</h3>
-
-            {previewData.invalidRows && previewData.invalidRows.length > 0 && (
-              <div class="mb-4">
-                <h4 class="text-sm font-semibold mb-2 text-red-600">
-                  Invalid Rows ({previewData.invalidRows.length})
-                </h4>
-                <div class="max-h-60 overflow-y-auto">
-                  {previewData.invalidRows.slice(0, 10).map((row: any) => (
-                    <div key={row.rowNumber} class="mb-1 text-sm">
-                      Row {row.rowNumber}: {row.errors?.join(', ')}
-                    </div>
-                  ))}
-                  {previewData.invalidRows.length > 10 && (
-                    <div class="text-sm text-ink-light">
-                      ...and {previewData.invalidRows.length - 10} more
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {previewData.duplicateRows && previewData.duplicateRows.length > 0 && (
-              <div class="mb-4">
-                <h4 class="text-sm font-semibold mb-2 text-amber-600">
-                  Duplicate Rows ({previewData.duplicateRows.length})
-                </h4>
-                <div class="max-h-60 overflow-y-auto">
-                  {previewData.duplicateRows.slice(0, 10).map((row: any) => (
-                    <div key={row.rowNumber} class="mb-1 text-sm">
-                      Row {row.rowNumber}: {row.reason}
-                    </div>
-                  ))}
-                  {previewData.duplicateRows.length > 10 && (
-                    <div class="text-sm text-ink-light">
-                      ...and {previewData.duplicateRows.length - 10} more
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div class="flex items-center gap-2 mb-4">
-              <div class="h-2 flex-1 bg-ink-light/20 rounded overflow-hidden">
-                <div
-                  class="h-full bg-green-600"
-                  style={{ width: `${previewData.totals?.valid ? (previewData.totals.valid / previewData.totals.total) * 100 : 0}%` }}
-                ></div>
-              </div>
-              <span class="text-sm">
-                {previewData.totals?.valid || 0}/{previewData.totals?.total || 0} valid
-              </span>
-            </div>
-
-            {error && <div class="error-message mb-4">{error}</div>}
-
-            <div class="flex gap-2">
-              <button
-                class="btn btn-secondary"
-                onClick={() => {
-                  setPreviewData(null);
-                  setFile(null);
-                  setError(null);
-                }}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                class="btn btn-primary"
-                onClick={handleCommit}
-                disabled={commitLoading || previewData.totals?.valid !== previewData.totals?.total}
-                type="button"
-              >
-                {commitLoading ? 'Committing...' : `Import (${previewData.totals?.valid || 0} valid rows)`}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {error && (
-          <div class="error-message">
-            {error}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
 // Products Screen
 // ============================================================================
 
@@ -1678,11 +1664,12 @@ function ProductsScreen({ onNavigate }: ProductsScreenProps) {
 // ============================================================================
 
 export function App() {
-  const [state, setState] = useState<InventoryState>(createInitialState);
+  const [state, setState] = useState<InventoryState>(createEmptyInventoryState);
   const [route, setRoute] = useState<Route>('home');
   const [lastCompletedSaleId, setLastCompletedSaleId] = useState<number>(0);
   const [activeSaleIdempotencyKey, setActiveSaleIdempotencyKey] = useState<string>(() => crypto.randomUUID());
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   // Auth gate: check session on mount
   useEffect(() => {
@@ -1696,6 +1683,16 @@ export function App() {
       .catch(() => setSignedIn(false));
   }, []);
 
+  useEffect(() => {
+    if (!signedIn) return;
+    apiGetJson<{ items: Product[] }>('/products?active=all&limit=1000')
+      .then(({ items }) => setState((previous) => ({
+        ...previous,
+        products: new Map(items.map((product) => [product.id, product])),
+      })))
+      .catch(() => undefined);
+  }, [signedIn]);
+
   // Listen for 401 events from api.ts
   useEffect(() => {
     const handler = () => setSignedIn(false);
@@ -1708,11 +1705,19 @@ export function App() {
     window.scrollTo(0, 0);
   }, []);
 
-  const handleReset = useCallback(() => {
-    setState(createInitialState());
-    setLastCompletedSaleId(0);
-    setRoute('home');
-    setActiveSaleIdempotencyKey(crypto.randomUUID());
+  const handleLogout = useCallback(async () => {
+    setIsLoggingOut(true);
+    try {
+      await apiPostJson<void>('/logout', {});
+      setState(createEmptyInventoryState());
+      setLastCompletedSaleId(0);
+      setRoute('home');
+      setSignedIn(false);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not log out. Please try again.');
+    } finally {
+      setIsLoggingOut(false);
+    }
   }, []);
 
   const handleSaleDraftChange = useCallback((draft: InventoryState['saleDraft']) => {
@@ -1733,9 +1738,11 @@ export function App() {
   const renderScreen = () => {
     switch (route) {
       case 'home':
-        return <HomeScreen state={state} onNavigate={handleNavigate} onReset={handleReset} />;
+        return <HomeScreen state={state} onNavigate={handleNavigate} onLogout={handleLogout} isLoggingOut={isLoggingOut} />;
       case 'sell':
         return <SellScreen state={state} onSaleDraftChange={handleSaleDraftChange} onNavigate={handleNavigate} />;
+      case 'sales':
+        return <SalesHistoryScreen state={state} onStateChange={setState} onNavigate={handleNavigate} setLastCompletedSaleId={setLastCompletedSaleId} />;
       case 'review-sale':
         return (
           <ReviewSaleScreen
@@ -1757,16 +1764,16 @@ export function App() {
         return <CountStockScreen state={state} onStateChange={setState} />;
       case 'fix-stock':
         return <FixStockScreen state={state} onStateChange={setState} />;
-      case 'import':
-        return <ImportScreen onNavigate={handleNavigate} />;
       case 'view-sale':
-        return <ViewSaleScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onNavigate={handleNavigate} />;
+        return <ViewSaleScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
       case 'cancel-sale-confirm':
         return <CancelSaleConfirmScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
       case 'products':
         return <ProductsScreen onNavigate={handleNavigate} />;
+      case 'lids':
+        return <LidLookup />;
       default:
-        return <HomeScreen state={state} onNavigate={handleNavigate} onReset={handleReset} />;
+        return <HomeScreen state={state} onNavigate={handleNavigate} onLogout={handleLogout} isLoggingOut={isLoggingOut} />;
     }
   };
 
@@ -1799,7 +1806,7 @@ export function App() {
   return (
     <div class="app">
       {renderScreen()}
-      {showNav && <Nav currentRoute={route} onNavigate={handleNavigate} />}
+      {showNav && <Nav currentRoute={route} onNavigate={handleNavigate} onLogout={handleLogout} isLoggingOut={isLoggingOut} />}
     </div>
   );
 }

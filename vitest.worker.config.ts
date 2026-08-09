@@ -14,7 +14,7 @@ export default defineConfig({
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(path.join(import.meta.dirname, 'migrations')),
           PASSWORD_HASH:
-            'pbkdf2$sha256$210000$7KNd2M28x7TAlTKg2GWm_g$2MO5lq919TO03d6GhgxZeIdbKumMP__HFOQHXrZ1DuU',
+            'pbkdf2$sha256$100000$7KNd2M28x7TAlTKg2GWm_g$c8MwGUQ69HFNXYWJZP6fWsRke_9Nq6S6nlBMV2HqpaI',
           SESSION_SECRET: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
           SESSION_MAX_AGE_SECONDS: '3600',
           ALLOWED_ORIGINS: 'https://inventory.example.test,http://localhost:5173',

@@ -21,13 +21,38 @@ export interface ProductDTO {
   readonly sku: string | null;
   readonly name: string;
   readonly category: string | null;
+  readonly colour: string | null;
+  readonly size: string | null;
   readonly pricePaise: number;
+  readonly mrpPaise: number | null;
+  readonly consultantPricePaise: number | null;
   readonly quantity: number;
+  readonly setStockQuantity: number;
   readonly lowStockLevel: number;
+  readonly locationId: number | null;
+  readonly locationName: string | null;
+  readonly personalUse: boolean;
   readonly active: boolean;
   readonly version: number;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface LocationDTO {
+  readonly id: number;
+  readonly name: string;
+}
+
+export interface LidReferenceDTO {
+  readonly id: number;
+  readonly orderCode: string | null;
+  readonly itemCode: string;
+  readonly description: string;
+  readonly promotion: string | null;
+  readonly mrpPaise: number;
+  readonly specialPricePaise: number;
+  readonly consultantPricePaise: number;
+  readonly displayPricePaise: number;
 }
 
 export interface SaleLineDTO {
@@ -36,17 +61,25 @@ export interface SaleLineDTO {
   readonly quantity: number;
   readonly unitPricePaise: number;
   readonly lineTotalPaise: number;
+  readonly setStockBefore: number;
+  readonly setStockAfter: number;
 }
 
 export interface SaleDTO {
   readonly id: number;
   readonly saleNumber: string;
   readonly soldAt: string;
+  readonly saleDate: string;
+  readonly customerName: string | null;
   readonly lines: readonly SaleLineDTO[];
   readonly subtotalPaise: number;
   readonly discountPaise: number;
   readonly totalPaise: number;
   readonly paymentMethod: string;
+  readonly paidPaise: number;
+  readonly balancePaise: number;
+  readonly paymentStatus: 'unpaid' | 'partial' | 'paid';
+  readonly payments: readonly PaymentDTO[];
   readonly status: 'completed' | 'cancelled';
   readonly cancelledAt?: string;
   readonly cancellationReason?: string;
@@ -79,8 +112,40 @@ export interface DashboardDTO {
 
 export interface CreateSaleRequest {
   readonly idempotencyKey: string;
-  readonly lines: readonly { readonly productId: number; readonly quantity: number }[];
+  readonly saleDate: string;
+  readonly customerName?: string | null;
+  readonly lines: readonly {
+    readonly productId: number;
+    readonly quantity: number;
+    readonly unitPricePaise: number;
+    readonly setStockAfter: number;
+  }[];
   readonly discountPaise: number;
+  readonly paymentMethod: string;
+  readonly receivedPaise: number;
+}
+
+export interface PaymentDTO {
+  readonly id: number;
+  readonly amountPaise: number;
+  readonly paymentMethod: string;
+  readonly receivedAt: string;
+}
+
+export interface SaleSummaryDTO {
+  readonly id: number;
+  readonly saleNumber: string;
+  readonly saleDate: string;
+  readonly customerName: string | null;
+  readonly totalPaise: number;
+  readonly paidPaise: number;
+  readonly balancePaise: number;
+  readonly paymentStatus: 'unpaid' | 'partial' | 'paid';
+  readonly status: 'completed' | 'cancelled';
+}
+
+export interface RecordPaymentRequest {
+  readonly amountPaise: number;
   readonly paymentMethod: string;
 }
 
@@ -88,9 +153,16 @@ export interface CreateProductRequest {
   readonly sku: string | null;
   readonly name: string;
   readonly category: string | null;
+  readonly colour?: string | null;
+  readonly size?: string | null;
   readonly pricePaise: number;
+  readonly mrpPaise?: number | null;
+  readonly consultantPricePaise?: number | null;
   readonly lowStockLevel: number;
   readonly quantity: number;
+  readonly setStockQuantity?: number;
+  readonly locationId?: number | null;
+  readonly personalUse?: boolean;
   readonly active: boolean;
 }
 

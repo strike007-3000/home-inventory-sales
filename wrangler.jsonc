@@ -2,7 +2,16 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "home-inventory",
   "main": "server/index.ts",
-  "compatibility_date": "2026-08-01",
+  "compatibility_date": "2026-08-08",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    }
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -13,13 +22,16 @@
     {
       "binding": "DB",
       "database_name": "home-inventory-db",
-      "database_id": "<fill after wrangler d1 create>",
+      "database_id": "235cfe08-4280-4f1b-be9e-090ec7f2a889",
       "migrations_dir": "migrations"
     }
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "http://localhost:5173",
+    "ALLOWED_ORIGINS": "https://home-inventory.shreyasgore.workers.dev",
     "DB_NAME": "home-inventory-db",
     "SESSION_MAX_AGE_SECONDS": "2592000"
+  },
+  "secrets": {
+    "required": ["PASSWORD_HASH", "SESSION_SECRET"]
   }
 }
