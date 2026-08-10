@@ -53,6 +53,7 @@ import {
   ChevronRightIcon,
   ChevronLeftIcon,
   LogoutIcon,
+  AppLogo,
 } from './icons';
 import './styles.css';
 import { LoginScreen } from './screens/login';
@@ -82,11 +83,13 @@ type Route =
 interface NavProps {
   currentRoute: Route;
   onNavigate: (route: Route) => void;
+  onLogout: () => Promise<void>;
+  isLoggingOut: boolean;
 }
 
-function Nav({ currentRoute, onNavigate }: NavProps) {
+function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
   const navItems: { route: Route; label: string; Icon: () => JSX.Element }[] = [
-    { route: 'home', label: 'Home', Icon: HomeIcon },
+    { route: 'home', label: 'Dashboard', Icon: HomeIcon },
     { route: 'sales', label: 'Sales', Icon: SellIcon },
     { route: 'products', label: 'Products', Icon: ProductsIcon },
     { route: 'lids', label: 'LIDS', Icon: SearchIcon },
@@ -101,6 +104,7 @@ function Nav({ currentRoute, onNavigate }: NavProps) {
   return (
     <nav class="nav" role="navigation" aria-label="Main navigation">
       <div class="nav-brand" aria-label="Home Inventory">
+        <AppLogo />
         <span>Home Inventory</span>
       </div>
       <div class="nav-inner">
@@ -119,6 +123,10 @@ function Nav({ currentRoute, onNavigate }: NavProps) {
           </button>
         ))}
       </div>
+      <button class="nav-item nav-logout" onClick={() => void onLogout()} disabled={isLoggingOut} type="button">
+        <span class="nav-icon" aria-hidden="true"><LogoutIcon /></span>
+        <span>{isLoggingOut ? 'Signing out…' : 'Logout'}</span>
+      </button>
     </nav>
   );
 }
@@ -201,8 +209,8 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
     <div class="screen">
       <div class="main no-sticky-action">
         <div class="page-header flex items-center justify-between mb-4">
-          <h1 class="text-2xl font-semibold">Home</h1>
-          <button class="btn btn-primary btn-lg" onClick={() => onNavigate('sell')} type="button">Record a sale</button>
+          <h1 class="text-2xl font-semibold">Dashboard</h1>
+          <button class="btn btn-primary btn-sm" onClick={() => onNavigate('sell')} type="button">+ Record a sale</button>
         </div>
 
         {/* Top 4 KPI Metric Cards Grid */}
@@ -1945,7 +1953,8 @@ export function App() {
       <div class="top-header-bar">
         <div class="top-header-inner">
           <div class="top-header-brand" onClick={() => handleNavigate('home')} style={{ cursor: 'pointer' }}>
-            Home Inventory
+            <AppLogo />
+            <span>Home Inventory</span>
           </div>
           <button
             class="btn btn-ghost btn-sm top-header-logout"
@@ -1960,7 +1969,7 @@ export function App() {
         </div>
       </div>
       {renderScreen()}
-      {showNav && <Nav currentRoute={route} onNavigate={handleNavigate} />}
+      {showNav && <Nav currentRoute={route} onNavigate={handleNavigate} onLogout={handleLogout} isLoggingOut={isLoggingOut} />}
     </div>
   );
 }
