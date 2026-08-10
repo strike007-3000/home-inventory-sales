@@ -208,9 +208,11 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
   return (
     <div class="screen">
       <div class="main no-sticky-action">
-        <div class="page-header flex items-center justify-between mb-4">
+        <div class="page-header">
           <h1 class="text-2xl font-semibold">Dashboard</h1>
-          <button class="btn btn-primary btn-sm" onClick={() => onNavigate('sell')} type="button">+ Record a sale</button>
+          <div class="header-actions">
+            <button class="btn btn-primary btn-sm" onClick={() => onNavigate('sell')} type="button">Record sale</button>
+          </div>
         </div>
 
         {/* Top 4 KPI Metric Cards Grid */}
@@ -512,9 +514,11 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
   return (
     <div class="screen">
       <div class="main no-sticky-action">
-        <div class="page-header flex items-center justify-between mb-4">
+        <div class="page-header">
           <h1 class="text-2xl font-semibold">Sales</h1>
-          <button class="btn btn-primary btn-sm" type="button" onClick={() => onNavigate('sell')}>Record sale</button>
+          <div class="header-actions">
+            <button class="btn btn-primary btn-sm" type="button" onClick={() => onNavigate('sell')}>Record sale</button>
+          </div>
         </div>
 
         <form class="sales-search-form" onSubmit={(event) => { event.preventDefault(); void loadSales(query); }}>
@@ -525,7 +529,7 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
               onInput={(event) => setQuery((event.target as HTMLInputElement).value)} />
           </div>
           <div class="sales-search-actions">
-            <button class="btn btn-primary" type="submit">Search</button>
+            <button class="btn btn-navy" type="submit">Search</button>
             <button class="btn btn-secondary" type="button" onClick={() => { setQuery(''); void loadSales(); }}>Reset</button>
           </div>
         </form>

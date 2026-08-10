@@ -51,16 +51,18 @@ export function LidLookup() {
         <h1 class="text-2xl font-semibold mb-2">LIDS price lookup</h1>
         <p class="text-sm text-ink-light mb-4">Reference prices only. These items are not inventory stock.</p>
 
-        <form class="lid-search-form mb-4" onSubmit={submit} role="search">
-          <div class="search-input lid-search-field">
+        <form class="sales-search-form mb-4" onSubmit={submit} role="search">
+          <div class="search-input">
             <SearchIcon />
             <input type="search" class="form-input" value={input}
               onInput={(event) => setInput((event.target as HTMLInputElement).value)}
               placeholder="Search description, item code or order code…" aria-label="Search LIDS prices" />
           </div>
-          <button class="btn btn-primary" type="submit">Search</button>
-          <button class="btn btn-secondary" type="button" onClick={reset}
-            disabled={!input && !query}>Reset</button>
+          <div class="sales-search-actions">
+            <button class="btn btn-navy" type="submit">Search</button>
+            <button class="btn btn-secondary" type="button" onClick={reset}
+              disabled={!input && !query}>Reset</button>
+          </div>
         </form>
 
         {error && <div class="error-message mb-4" role="alert">{error}</div>}

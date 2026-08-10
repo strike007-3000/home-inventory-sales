@@ -105,12 +105,12 @@ export function ProductList({ activeFilter = 'all', onNavigate }: ProductListPro
   return (
     <div class="screen">
       <div class="main no-sticky-action">
-        <div class="page-header flex items-center justify-between mb-4">
+        <div class="page-header">
           <h1 class="text-2xl font-semibold">Products</h1>
-          <div class="flex items-center gap-2">
+          <div class="header-actions">
             {onNavigate && (
               <button
-                class="btn btn-secondary btn-sm"
+                class="btn btn-soft-blue btn-sm"
                 onClick={() => onNavigate('stock')}
                 type="button"
               >
@@ -129,16 +129,22 @@ export function ProductList({ activeFilter = 'all', onNavigate }: ProductListPro
           </div>
         </div>
 
-        <div class="search-input mb-4">
-          <SearchIcon />
-          <input
-            type="search"
-            class="form-input"
-            placeholder="Search name, colour, size, location or SKU…"
-            value={searchQuery}
-            onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
-            aria-label="Search products"
-          />
+        <div class="sales-search-form mb-4">
+          <div class="search-input">
+            <SearchIcon />
+            <input
+              type="search"
+              class="form-input"
+              placeholder="Search name, colour, size, location or SKU…"
+              value={searchQuery}
+              onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
+              aria-label="Search products"
+            />
+          </div>
+          <div class="sales-search-actions">
+            <button class="btn btn-navy" type="button" onClick={() => refetch()}>Search</button>
+            <button class="btn btn-secondary" type="button" onClick={() => setSearchQuery('')} disabled={!searchQuery}>Reset</button>
+          </div>
         </div>
 
         {fetchError && (
