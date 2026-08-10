@@ -82,11 +82,9 @@ type Route =
 interface NavProps {
   currentRoute: Route;
   onNavigate: (route: Route) => void;
-  onLogout: () => Promise<void>;
-  isLoggingOut: boolean;
 }
 
-function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
+function Nav({ currentRoute, onNavigate }: NavProps) {
   const navItems: { route: Route; label: string; Icon: () => JSX.Element }[] = [
     { route: 'home', label: 'Home', Icon: HomeIcon },
     { route: 'sales', label: 'Sales', Icon: SellIcon },
@@ -121,10 +119,6 @@ function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
           </button>
         ))}
       </div>
-      <button class="nav-item nav-logout" onClick={() => void onLogout()} disabled={isLoggingOut} type="button">
-        <span class="nav-icon" aria-hidden="true"><LogoutIcon /></span>
-        <span>{isLoggingOut ? 'Signing out…' : 'Logout'}</span>
-      </button>
     </nav>
   );
 }
@@ -183,84 +177,138 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
     return Math.max(1, ...last7Days.map((d) => d.totalPaise));
   }, [last7Days]);
 
+  const topCategories = useMemo(() => {
+    const catMap = new Map<string, number>();
+    for (const product of state.products.values()) {
+      if (product.active && product.category && product.category.trim().length > 0) {
+        const cat = product.category.trim();
+        const current = catMap.get(cat) || 0;
+        catMap.set(cat, current + product.quantity);
+      }
+    }
+    const sorted = Array.from(catMap.entries())
+      .map(([name, qty]) => ({ name, qty }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 4);
+
+    const maxQty = Math.max(1, ...sorted.map((c) => c.qty));
+    return { categories: sorted, maxQty };
+  }, [state.products]);
+
   const attentionProducts = [...outOfStock, ...lowStock.slice(0, 3)];
 
   return (
     <div class="screen">
       <div class="main no-sticky-action">
-        <div class="page-header">
+        <div class="page-header flex items-center justify-between mb-4">
           <h1 class="text-2xl font-semibold">Home</h1>
           <button class="btn btn-primary btn-lg" onClick={() => onNavigate('sell')} type="button">Record a sale</button>
         </div>
 
-        {/* Top Summary Row: Today's sales + Stock alerts */}
-        <div class="home-summary-row mb-4">
-          {/* Today's sales & Past 7 days */}
-          <section>
-            <h2 class="text-lg font-semibold mb-3">Today</h2>
-            <div class="card">
-              <div class="flex items-baseline justify-between gap-2">
-                <div class="summary-value">{todaySales.count} {todaySales.count === 1 ? 'sale' : 'sales'}</div>
-                {todaySales.totalPaise > 0 && (
-                  <div class="text-lg font-semibold text-blue">{formatInr(todaySales.totalPaise)}</div>
-                )}
-              </div>
-              <div class="summary-label">
-                {todaySales.totalPaise > 0 ? 'Total sales today' : 'No sales recorded today'}
-              </div>
+        {/* Top 4 KPI Metric Cards Grid */}
+        <div class="home-metric-grid mb-4">
+          <div class="card flex items-center justify-between">
+            <div>
+              <div class="summary-value">{todaySales.totalPaise > 0 ? formatInr(todaySales.totalPaise) : '₹0'}</div>
+              <div class="summary-label">Today's revenue</div>
+            </div>
+            <div class="summary-icon-badge">
+              <SellIcon />
+            </div>
+          </div>
 
-              {/* Past 7 Days Chart */}
-              <div class="mt-4 pt-3 divider-top">
-                <div class="text-xs font-semibold text-ink-light mb-2">Past 7 days</div>
-                <div class="flex items-end justify-between gap-2" style={{ height: '64px' }}>
-                  {last7Days.map((d) => {
-                    const heightPercent = d.totalPaise > 0 ? Math.max(16, Math.round((d.totalPaise / maxSalesPaise) * 100)) : 8;
+          <div class="card flex items-center justify-between">
+            <div>
+              <div class="summary-value">{todaySales.count}</div>
+              <div class="summary-label">{todaySales.count === 1 ? 'Sale today' : 'Sales today'}</div>
+            </div>
+            <div class="summary-icon-badge green">
+              <CheckIcon />
+            </div>
+          </div>
+
+          <button
+            class={`card card-clickable flex items-center justify-between ${lowStock.length > 0 ? 'alert-warning' : 'alert-clear'}`}
+            onClick={() => onNavigate('products')}
+            type="button"
+          >
+            <div>
+              <div class="summary-value">{lowStock.length}</div>
+              <div class="summary-label">Low stock items</div>
+            </div>
+            <div class={`summary-icon-badge ${lowStock.length > 0 ? 'amber' : 'green'}`}>
+              {lowStock.length > 0 ? <AlertIcon /> : <CheckIcon />}
+            </div>
+          </button>
+
+          <button
+            class={`card card-clickable flex items-center justify-between ${outOfStock.length > 0 ? 'alert-danger' : 'alert-clear'}`}
+            onClick={() => onNavigate('products')}
+            type="button"
+          >
+            <div>
+              <div class="summary-value">{outOfStock.length}</div>
+              <div class="summary-label">Out of stock</div>
+            </div>
+            <div class={`summary-icon-badge ${outOfStock.length > 0 ? 'red' : 'green'}`}>
+              {outOfStock.length > 0 ? <AlertIcon /> : <CheckIcon />}
+            </div>
+          </button>
+        </div>
+
+        {/* Middle Row: Top Categories Breakdown & Past 7 Days Sales */}
+        <div class="home-summary-row mb-4">
+          {/* Top Categories */}
+          <section>
+            <h2 class="text-lg font-semibold mb-3">Top categories</h2>
+            <div class="card">
+              {topCategories.categories.length === 0 ? (
+                <div class="text-sm text-ink-light py-4 text-center">No categories recorded yet</div>
+              ) : (
+                <div class="flex flex-col gap-3">
+                  {topCategories.categories.map((cat) => {
+                    const widthPercent = Math.max(12, Math.round((cat.qty / topCategories.maxQty) * 100));
                     return (
-                      <div key={d.dateStr} class="flex-1 flex flex-col items-center gap-1 group relative chart-bar-col">
-                        {d.totalPaise > 0 && (
-                          <div class="chart-tooltip">
-                            {formatInr(d.totalPaise)}
-                          </div>
-                        )}
-                        <div
-                          class={`chart-bar w-full rounded-sm ${d.isToday ? 'bg-blue' : d.totalPaise > 0 ? 'bg-ink-light' : 'bg-line'}`}
-                          style={{ height: `${heightPercent}%`, opacity: d.isToday ? 1 : d.totalPaise > 0 ? 0.7 : 0.4 }}
-                        />
-                        <span class={`text-xs ${d.isToday ? 'font-bold text-blue' : 'text-ink-light'}`}>{d.dayLabel}</span>
+                      <div key={cat.name} class="category-row">
+                        <div class="flex items-center justify-between text-sm mb-1">
+                          <span class="font-semibold">{cat.name}</span>
+                          <span class="text-ink-light font-mono text-xs">{cat.qty} in stock</span>
+                        </div>
+                        <div class="w-full bg-line rounded-sm overflow-hidden" style={{ height: '8px' }}>
+                          <div class="bg-blue h-full rounded-sm transition-all" style={{ width: `${widthPercent}%` }} />
+                        </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
+              )}
             </div>
           </section>
 
-          {/* Stock alerts */}
+          {/* Past 7 Days Chart */}
           <section>
-            <h2 class="text-lg font-semibold mb-3">Stock alerts</h2>
-            <div class="home-alerts">
-              <button
-                class={`card card-clickable flex-1 ${lowStock.length > 0 ? 'alert-warning' : 'alert-clear'}`}
-                onClick={() => onNavigate('products')}
-                type="button"
-              >
-                <div class="flex items-center justify-between">
-                  <div class="summary-value">{lowStock.length}</div>
-                  {lowStock.length > 0 ? <AlertIcon /> : <CheckIcon />}
-                </div>
-                <div class="summary-label">Low stock</div>
-              </button>
-              <button
-                class={`card card-clickable flex-1 ${outOfStock.length > 0 ? 'alert-danger' : 'alert-clear'}`}
-                onClick={() => onNavigate('products')}
-                type="button"
-              >
-                <div class="flex items-center justify-between">
-                  <div class="summary-value">{outOfStock.length}</div>
-                  {outOfStock.length > 0 ? <AlertIcon /> : <CheckIcon />}
-                </div>
-                <div class="summary-label">Out of stock</div>
-              </button>
+            <h2 class="text-lg font-semibold mb-3">Past 7 days</h2>
+            <div class="card">
+              <div class="text-xs font-semibold text-ink-light mb-3">Daily sales trend (₹)</div>
+              <div class="flex items-end justify-between gap-2" style={{ height: '110px' }}>
+                {last7Days.map((d) => {
+                  const heightPercent = d.totalPaise > 0 ? Math.max(16, Math.round((d.totalPaise / maxSalesPaise) * 100)) : 8;
+                  return (
+                    <div key={d.dateStr} class="flex-1 flex flex-col items-center gap-1 group relative chart-bar-col">
+                      {d.totalPaise > 0 && (
+                        <div class="chart-tooltip">
+                          {formatInr(d.totalPaise)}
+                        </div>
+                      )}
+                      <div
+                        class={`chart-bar w-full rounded-sm ${d.isToday ? 'bg-blue' : d.totalPaise > 0 ? 'bg-ink-light' : 'bg-line'}`}
+                        style={{ height: `${heightPercent}%`, opacity: d.isToday ? 1 : d.totalPaise > 0 ? 0.7 : 0.4 }}
+                      />
+                      <span class={`text-xs ${d.isToday ? 'font-bold text-blue' : 'text-ink-light'}`}>{d.dayLabel}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </section>
         </div>
@@ -1894,8 +1942,25 @@ export function App() {
 
   return (
     <div class="app">
+      <div class="top-header-bar">
+        <div class="top-header-inner">
+          <div class="top-header-brand" onClick={() => handleNavigate('home')} style={{ cursor: 'pointer' }}>
+            Home Inventory
+          </div>
+          <button
+            class="btn btn-ghost btn-sm top-header-logout"
+            onClick={() => void handleLogout()}
+            disabled={isLoggingOut}
+            type="button"
+            aria-label="Logout"
+          >
+            <LogoutIcon />
+            <span class="top-header-logout-text">{isLoggingOut ? 'Signing out…' : 'Logout'}</span>
+          </button>
+        </div>
+      </div>
       {renderScreen()}
-      {showNav && <Nav currentRoute={route} onNavigate={handleNavigate} onLogout={handleLogout} isLoggingOut={isLoggingOut} />}
+      {showNav && <Nav currentRoute={route} onNavigate={handleNavigate} />}
     </div>
   );
 }

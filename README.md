@@ -9,8 +9,10 @@ A private, touch-friendly inventory and sales application for a small home busin
 - Sales with customer name, editable sale date, price overrides, discounts, payment method, partial/unpaid balances, later payments, and cancellation
 - Searchable sales history with payment-status filtering
 - Separate LIDS market-price lookup that never participates in inventory stock
-- Visual 7-day sales trend summary chart and status-highlighted stock alerts on Home screen
-- Shared-password authentication with signed cookies and CSRF protection, accessible via universal mobile and desktop navigation
+- Visual 7-day sales trend summary chart, top category breakdown, and status-highlighted stock alerts on Home screen
+- Metric summary cards with visual icon badges for revenue, sales count, and stock alerts
+- Universal top-right logout header accessible across all pages and viewports (desktop, phone, iPad)
+- Shared-password authentication with signed cookies and CSRF protection
 - Responsive desktop, phone, and iPad layouts with parent-friendly high-contrast indicators
 - Automatic production builds and deployments from GitHub `main`
 
