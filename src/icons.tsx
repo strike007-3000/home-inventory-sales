@@ -186,3 +186,12 @@ export function UploadIcon() {
     </svg>
   );
 }
+
+export function AppLogo() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" class="app-logo-icon">
+      <rect x="3" y="3" width="18" height="18" rx="4" fill="var(--blue)" stroke="none" />
+      <path d="M7 8h10M7 12h7M7 16h4" stroke="#ffffff" strokeWidth="2.2" />
+    </svg>
+  );
+}
