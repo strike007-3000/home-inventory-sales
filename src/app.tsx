@@ -44,6 +44,7 @@ import {
   ProductsIcon,
   SearchIcon,
   CheckIcon,
+  AlertIcon,
   PackageIcon,
   ClipboardIcon,
   WrenchIcon,
@@ -135,11 +136,9 @@ function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
 interface HomeScreenProps {
   state: InventoryState;
   onNavigate: (route: Route) => void;
-  onLogout: () => Promise<void>;
-  isLoggingOut: boolean;
 }
 
-function HomeScreen({ state, onNavigate, onLogout, isLoggingOut }: HomeScreenProps) {
+function HomeScreen({ state, onNavigate }: HomeScreenProps) {
   const lowStock = getLowStockProducts(state);
   const outOfStock = getOutOfStockProducts(state);
   const localToday = useMemo(() => {
@@ -155,6 +154,37 @@ function HomeScreen({ state, onNavigate, onLogout, isLoggingOut }: HomeScreenPro
       .catch(() => setTodaySales(fallbackTodaySales));
   }, [localToday, fallbackTodaySales.count, fallbackTodaySales.totalPaise]);
 
+  const last7Days = useMemo(() => {
+    const result: { dateStr: string; dayLabel: string; isToday: boolean; totalPaise: number }[] = [];
+    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const now = new Date();
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 86_400_000);
+      const dateStr = new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+      const dayLabel = daysOfWeek[d.getDay()] || '';
+      result.push({ dateStr, dayLabel, isToday: i === 0, totalPaise: 0 });
+    }
+
+    for (const sale of state.sales) {
+      if (sale.soldAt) {
+        const saleDateStr = sale.soldAt.slice(0, 10);
+        const match = result.find((r) => r.dateStr === saleDateStr);
+        if (match) {
+          match.totalPaise += sale.totalPaise;
+        }
+      }
+    }
+
+    return result;
+  }, [state.sales]);
+
+  const maxSalesPaise = useMemo(() => {
+    return Math.max(1, ...last7Days.map((d) => d.totalPaise));
+  }, [last7Days]);
+
+  const attentionProducts = [...outOfStock, ...lowStock.slice(0, 3)];
+
   return (
     <div class="screen">
       <div class="main no-sticky-action">
@@ -163,62 +193,114 @@ function HomeScreen({ state, onNavigate, onLogout, isLoggingOut }: HomeScreenPro
           <button class="btn btn-primary btn-lg" onClick={() => onNavigate('sell')} type="button">Record a sale</button>
         </div>
 
-        {/* Today's sales */}
-        <section class="mb-4">
-          <h2 class="text-lg font-semibold mb-3">Today</h2>
-          <div class="card">
-            <div class="summary-value">{todaySales.count} {todaySales.count === 1 ? 'sale' : 'sales'}</div>
-            <div class="summary-label">
-              {todaySales.totalPaise > 0 ? formatInr(todaySales.totalPaise) + ' in sales' : 'No sales yet'}
-            </div>
-          </div>
-        </section>
+        {/* Top Summary Row: Today's sales + Stock alerts */}
+        <div class="home-summary-row mb-4">
+          {/* Today's sales & Past 7 days */}
+          <section>
+            <h2 class="text-lg font-semibold mb-3">Today</h2>
+            <div class="card">
+              <div class="flex items-baseline justify-between gap-2">
+                <div class="summary-value">{todaySales.count} {todaySales.count === 1 ? 'sale' : 'sales'}</div>
+                {todaySales.totalPaise > 0 && (
+                  <div class="text-lg font-semibold text-blue">{formatInr(todaySales.totalPaise)}</div>
+                )}
+              </div>
+              <div class="summary-label">
+                {todaySales.totalPaise > 0 ? 'Total sales today' : 'No sales recorded today'}
+              </div>
 
-        {/* Stock alerts */}
-        <section class="mb-4">
-          <h2 class="text-lg font-semibold mb-3">Stock alerts</h2>
-          <div class="home-alerts">
-            <button
-              class="card card-clickable flex-1"
-              onClick={() => onNavigate('products')}
-              type="button"
-            >
-              <div class="summary-value">{lowStock.length}</div>
-              <div class="summary-label">Low stock</div>
-            </button>
-            <button
-              class="card card-clickable flex-1"
-              onClick={() => onNavigate('products')}
-              type="button"
-            >
-              <div class="summary-value">{outOfStock.length}</div>
-              <div class="summary-label">Out of stock</div>
-            </button>
-          </div>
-        </section>
-
-        {/* Needs attention */}
-        {(lowStock.length > 0 || outOfStock.length > 0) && (
-          <section class="mb-4">
-            <h2 class="text-lg font-semibold mb-3">Needs attention</h2>
-            {[...outOfStock, ...lowStock.slice(0, 3)].map((product) => (
-              <div key={product.id} class="list-item">
-                <div>
-                  <div class="font-semibold">{product.name}</div>
-                  <div class="text-sm text-ink-light">
-                    {product.quantity === 0 ? 'Out of stock' : `${product.quantity} left`}
-                  </div>
+              {/* Past 7 Days Chart */}
+              <div class="mt-4 pt-3 divider-top">
+                <div class="text-xs font-semibold text-ink-light mb-2">Past 7 days</div>
+                <div class="flex items-end justify-between gap-2" style={{ height: '64px' }}>
+                  {last7Days.map((d) => {
+                    const heightPercent = d.totalPaise > 0 ? Math.max(16, Math.round((d.totalPaise / maxSalesPaise) * 100)) : 8;
+                    return (
+                      <div key={d.dateStr} class="flex-1 flex flex-col items-center gap-1 group relative chart-bar-col">
+                        {d.totalPaise > 0 && (
+                          <div class="chart-tooltip">
+                            {formatInr(d.totalPaise)}
+                          </div>
+                        )}
+                        <div
+                          class={`chart-bar w-full rounded-sm ${d.isToday ? 'bg-blue' : d.totalPaise > 0 ? 'bg-ink-light' : 'bg-line'}`}
+                          style={{ height: `${heightPercent}%`, opacity: d.isToday ? 1 : d.totalPaise > 0 ? 0.7 : 0.4 }}
+                        />
+                        <span class={`text-xs ${d.isToday ? 'font-bold text-blue' : 'text-ink-light'}`}>{d.dayLabel}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            ))}
+            </div>
           </section>
-        )}
 
-        <div class="mobile-logout mt-6">
-          <button class="btn btn-secondary" onClick={() => void onLogout()} disabled={isLoggingOut} type="button">
-            <LogoutIcon /> {isLoggingOut ? 'Signing out…' : 'Logout'}
-          </button>
+          {/* Stock alerts */}
+          <section>
+            <h2 class="text-lg font-semibold mb-3">Stock alerts</h2>
+            <div class="home-alerts">
+              <button
+                class={`card card-clickable flex-1 ${lowStock.length > 0 ? 'alert-warning' : 'alert-clear'}`}
+                onClick={() => onNavigate('products')}
+                type="button"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="summary-value">{lowStock.length}</div>
+                  {lowStock.length > 0 ? <AlertIcon /> : <CheckIcon />}
+                </div>
+                <div class="summary-label">Low stock</div>
+              </button>
+              <button
+                class={`card card-clickable flex-1 ${outOfStock.length > 0 ? 'alert-danger' : 'alert-clear'}`}
+                onClick={() => onNavigate('products')}
+                type="button"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="summary-value">{outOfStock.length}</div>
+                  {outOfStock.length > 0 ? <AlertIcon /> : <CheckIcon />}
+                </div>
+                <div class="summary-label">Out of stock</div>
+              </button>
+            </div>
+          </section>
         </div>
+
+        {/* Needs attention */}
+        <section class="mb-4">
+          <h2 class="text-lg font-semibold mb-3">Needs attention</h2>
+          {attentionProducts.length > 0 ? (
+            <div class="flex flex-col gap-2">
+              {attentionProducts.map((product) => (
+                <button
+                  key={product.id}
+                  class="card card-clickable flex items-center justify-between"
+                  onClick={() => onNavigate('products')}
+                  type="button"
+                >
+                  <div>
+                    <div class="font-semibold text-left">{product.name}</div>
+                    <div class="text-sm text-ink-light text-left mt-1">
+                      {product.quantity === 0 ? '0 in stock' : `${product.quantity} left`}
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    {product.quantity === 0 ? (
+                      <span class="status-chip status-chip-out-of-stock">Out of stock</span>
+                    ) : (
+                      <span class="status-chip status-chip-low-stock">Low stock</span>
+                    )}
+                    <ChevronRightIcon />
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div class="card flex items-center gap-3" style={{ background: 'var(--green-soft)', borderColor: 'rgba(20,122,82,0.25)' }}>
+              <span style={{ color: 'var(--green)' }}><CheckIcon /></span>
+              <span class="text-sm font-semibold text-success">Stock levels are all good!</span>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
@@ -1745,7 +1827,7 @@ export function App() {
   const renderScreen = () => {
     switch (route) {
       case 'home':
-        return <HomeScreen state={state} onNavigate={handleNavigate} onLogout={handleLogout} isLoggingOut={isLoggingOut} />;
+        return <HomeScreen state={state} onNavigate={handleNavigate} />;
       case 'sell':
         return <SellScreen state={state} onSaleDraftChange={handleSaleDraftChange} onNavigate={handleNavigate} />;
       case 'sales':
@@ -1780,7 +1862,7 @@ export function App() {
       case 'lids':
         return <LidLookup />;
       default:
-        return <HomeScreen state={state} onNavigate={handleNavigate} onLogout={handleLogout} isLoggingOut={isLoggingOut} />;
+        return <HomeScreen state={state} onNavigate={handleNavigate} />;
     }
   };
 
