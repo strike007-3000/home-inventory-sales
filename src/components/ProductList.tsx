@@ -12,13 +12,13 @@ import {
 
 interface ProductListProps {
   activeFilter?: 'active' | 'inactive' | 'all';
+  onNavigate?: (route: any) => void;
 }
 
-export function ProductList({ activeFilter = 'all' }: ProductListProps) {
+export function ProductList({ activeFilter = 'all', onNavigate }: ProductListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingProduct, setEditingProduct] = useState<number | null>(null);
   const [creatingProduct, setCreatingProduct] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
 
   const {
     products,
@@ -105,43 +105,41 @@ export function ProductList({ activeFilter = 'all' }: ProductListProps) {
   return (
     <div class="screen">
       <div class="main no-sticky-action">
-        <div class="page-header">
+        <div class="page-header flex items-center justify-between mb-4">
           <h1 class="text-2xl font-semibold">Products</h1>
-          <div class="flex gap-2">
-            <button
-              class="btn btn-ghost"
-              onClick={() => setShowSearch(!showSearch)}
-              type="button"
-            >
-              <SearchIcon />
-              {showSearch ? 'Close' : 'Search'}
-            </button>
+          <div class="flex items-center gap-2">
+            {onNavigate && (
+              <button
+                class="btn btn-secondary btn-sm"
+                onClick={() => onNavigate('stock')}
+                type="button"
+              >
+                Update stock
+              </button>
+            )}
             {!creatingProduct && !editingProduct && (
               <button
-                class="btn btn-primary"
+                class="btn btn-primary btn-sm"
                 onClick={() => setCreatingProduct(true)}
                 type="button"
               >
-                <PlusIcon />
                 New product
               </button>
             )}
           </div>
         </div>
 
-        {showSearch && (
-          <div class="search-input mb-4">
-            <SearchIcon />
-            <input
-              type="search"
-              class="form-input"
-              placeholder="Search name, colour, size, location or SKU…"
-              value={searchQuery}
-              onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
-              aria-label="Search products"
-            />
-          </div>
-        )}
+        <div class="search-input mb-4">
+          <SearchIcon />
+          <input
+            type="search"
+            class="form-input"
+            placeholder="Search name, colour, size, location or SKU…"
+            value={searchQuery}
+            onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
+            aria-label="Search products"
+          />
+        </div>
 
         {fetchError && (
           <div class="error-message mb-4" role="alert">
