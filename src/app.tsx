@@ -512,9 +512,9 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
   return (
     <div class="screen">
       <div class="main no-sticky-action">
-        <div class="page-header">
+        <div class="page-header flex items-center justify-between mb-4">
           <h1 class="text-2xl font-semibold">Sales</h1>
-          <button class="btn btn-primary btn-lg" type="button" onClick={() => onNavigate('sell')}>Record a sale</button>
+          <button class="btn btn-primary btn-sm" type="button" onClick={() => onNavigate('sell')}>Record sale</button>
         </div>
 
         <form class="sales-search-form" onSubmit={(event) => { event.preventDefault(); void loadSales(query); }}>
@@ -530,16 +530,26 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
           </div>
         </form>
 
-        <div class="form-group sales-filter mt-4">
-          <label class="form-label" for="sales-status">Payment status</label>
-          <select id="sales-status" class="form-input" value={statusFilter}
-            onInput={(event) => setStatusFilter((event.target as HTMLSelectElement).value as SalesStatusFilter)}>
-            <option value="all">All sales</option>
-            <option value="unpaid">Unpaid</option>
-            <option value="partial">Partially paid</option>
-            <option value="paid">Paid</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+        <div class="sales-filter-pills mt-3" role="group" aria-label="Filter by status">
+          {(
+            [
+              { value: 'all', label: 'All sales' },
+              { value: 'paid', label: 'Paid' },
+              { value: 'unpaid', label: 'Unpaid' },
+              { value: 'partial', label: 'Partial' },
+              { value: 'cancelled', label: 'Cancelled' },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              class={`filter-pill ${statusFilter === item.value ? 'selected' : ''}`}
+              aria-pressed={statusFilter === item.value}
+              onClick={() => setStatusFilter(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
 
         {error && <div class="error-message mt-4" role="alert">{error}</div>}
@@ -1791,17 +1801,7 @@ interface ProductsScreenProps {
 }
 
 function ProductsScreen({ onNavigate }: ProductsScreenProps) {
-  return (
-    <div class="screen">
-      <div class="main no-sticky-action">
-        <div class="page-header">
-          <h1 class="text-2xl font-semibold">Products</h1>
-          <button class="btn btn-secondary" onClick={() => onNavigate('stock')} type="button">Update stock</button>
-        </div>
-        <ProductList />
-      </div>
-    </div>
-  );
+  return <ProductList onNavigate={onNavigate} />;
 }
 
 // ============================================================================
