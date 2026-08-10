@@ -8,12 +8,13 @@ A private, touch-friendly inventory and sales application for a small home busin
 - Product search, editing, activation/deactivation, stock delivery, stock counts, and reasoned corrections
 - Sales with customer name, editable sale date, price overrides, discounts, payment method, partial/unpaid balances, later payments, and cancellation
 - Searchable sales history with instant horizontal payment-status filter pills (`All sales`, `Paid`, `Unpaid`, `Partial`, `Cancelled`)
+- Unified 50/50 side-by-side search bars with Deep Midnight Navy Blue (`#0f2b5c`) search buttons across Sales, Products, and LIDS
 - Separate LIDS market-price lookup that never participates in inventory stock
 - Visual 7-day sales trend summary chart, top category breakdown, and status-highlighted stock alerts on the operational Dashboard
 - Metric summary cards with visual icon badges for revenue, sales count, and stock alerts
 - Clean navigation shell with refreshed SVG line icons, application logo icon (`AppLogo`), top-right mobile logout, and desktop sidebar footer logout
 - Shared-password authentication with signed cookies and CSRF protection
-- Responsive desktop, phone, and iPad layouts with parent-friendly high-contrast indicators
+- Responsive desktop, phone, and iPad layouts with parent-friendly high-contrast indicators and stacked mobile page headers
 - Automatic production builds and deployments from GitHub `main`
 
 ## Technology
