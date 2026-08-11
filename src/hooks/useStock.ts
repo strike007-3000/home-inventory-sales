@@ -2,7 +2,8 @@
 // Hooks for stock deliveries, counts, and adjustments
 
 import { useState } from 'preact/hooks';
-import { apiPostJson } from '../api';
+import { ApiError, apiPostJson } from '../api';
+import type { StockChangeRequest, StockChangeResponse } from '../../shared/contracts';
 
 // ============================================================================
 // Stock Request Types
@@ -64,7 +65,7 @@ export function useStockDelivery() {
     setResult(null);
 
     try {
-      const data = await apiPostJson<StockDeliveryResponse>('/api/stock/deliveries', request);
+      const data = await apiPostJson<StockDeliveryResponse>('/stock/delivery', request);
       setResult(data);
       return data;
     } catch (err) {
@@ -125,7 +126,7 @@ export function useStockCount() {
     setResult(null);
 
     try {
-      const data = await apiPostJson<StockCountResponse>('/api/stock/counts', request);
+      const data = await apiPostJson<StockCountResponse>('/stock/count', request);
       setResult(data);
       return data;
     } catch (err) {
@@ -188,7 +189,7 @@ export function useStockAdjustment() {
     setResult(null);
 
     try {
-      const data = await apiPostJson<StockAdjustmentResponse>('/api/stock/adjustments', request);
+      const data = await apiPostJson<StockAdjustmentResponse>('/stock/adjustment', request);
       setResult(data);
       return data;
     } catch (err) {
@@ -206,4 +207,33 @@ export function useStockAdjustment() {
     error,
     result,
   };
+}
+
+export function useStockChange() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<StockChangeResponse | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
+
+  const execute = async (request: StockChangeRequest): Promise<StockChangeResponse | null> => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setErrorStatus(null);
+
+    try {
+      const data = await apiPostJson<StockChangeResponse>('/stock/change', request);
+      setResult(data);
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to change stock';
+      setError(message);
+      setErrorStatus(err instanceof ApiError ? err.status : null);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { execute, loading, error, errorStatus, isConflict: errorStatus === 409, result };
 }

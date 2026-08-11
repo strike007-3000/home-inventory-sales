@@ -24,9 +24,9 @@ import {
   handleProductHistory,
   handleListLocations,
 } from './products';
-import { handleStockDelivery, handleStockCount, handleStockAdjustment } from './stock';
+import { handleStockDelivery, handleStockCount, handleStockAdjustment, handleStockChange } from './stock';
 import { handleImportPreview, handleImportCommit } from './import';
-import { handleCancelSale, handleCreateSale, handleGetSale, handleListSales, handleRecordPayment } from './sales';
+import { handleCancelSale, handleCreateSale, handleGetSale, handleListSales, handleRecordPayment, handleUpdateSale } from './sales';
 import { handleListLids } from './lids';
 
 export default {
@@ -148,6 +148,9 @@ async function routeApi(
   if (path === '/stock/adjustment' && method === 'POST') {
     return handleStockAdjustment(request, env);
   }
+  if (path === '/stock/change' && method === 'POST') {
+    return handleStockChange(request, env);
+  }
 
   // Sales
   if (path === '/sales' && method === 'POST') {
@@ -163,6 +166,9 @@ async function routeApi(
   }
   if (saleMatch && !saleMatch[2] && method === 'GET') {
     return handleGetSale(saleId!, env);
+  }
+  if (saleMatch && !saleMatch[2] && method === 'PUT') {
+    return handleUpdateSale(saleId!, request, env);
   }
   if (saleMatch && saleMatch[2] === '/cancel' && method === 'POST') {
     return handleCancelSale(saleId!, request, env);

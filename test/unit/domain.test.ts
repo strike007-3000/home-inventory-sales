@@ -13,6 +13,7 @@ import {
   correctStock,
   setSaleLineQuantity,
   getSaleLineQuantity,
+  clearSaleDraft,
   setRestockLineQuantity,
   getRestockLineQuantity,
   getLowStockProducts,
@@ -25,6 +26,7 @@ import {
   validateQuantity,
   type SaleDraft,
   type RestockLine,
+  type Product,
 } from '../../src/domain';
 import { createInitialState, PRODUCT_IDS } from '../fixtures/inventory-state';
 
@@ -107,6 +109,16 @@ describe('Sale draft operations', () => {
     expect(getSaleLineQuantity(draft, 1)).toBe(2);
     expect(getSaleLineQuantity(draft, 2)).toBe(3);
     expect(draft.lines).toHaveLength(2);
+  });
+
+  it('clears every sale draft field through the canonical helper', () => {
+    const draft: SaleDraft = {
+      lines: [{ productId: 1, quantity: 3, unitPricePaise: 12500, setStockAfter: 2 }],
+      discountPaise: 500,
+      paymentMethod: 'cash',
+    };
+
+    expect(clearSaleDraft(draft)).toEqual({ lines: [], discountPaise: 0, paymentMethod: 'upi' });
   });
 });
 
@@ -750,3 +762,25 @@ describe('getInventoryValuation', () => {
   });
 });
 
+describe('searchProducts colour and size matching', () => {
+  const productsMap = new Map<number, Product>([
+      [1, { id: 1, sku: 'LB-01', name: 'Lunch Box', category: 'Kitchen', colour: 'Ocean Blue', size: '500ml', pricePaise: 50000, quantity: 10, lowStockLevel: 2, active: true, version: 1 }],
+      [2, { id: 2, sku: 'LB-02', name: 'Lunch Box', category: 'Kitchen', colour: 'Crimson Red', size: '750ml', pricePaise: 60000, quantity: 5, lowStockLevel: 2, active: true, version: 1 }],
+      [3, { id: 3, sku: null, name: 'Plain Box', category: null, colour: null, size: null, pricePaise: 30000, quantity: 3, lowStockLevel: 1, active: true, version: 1 }],
+    ]);
+
+  it('matches by colour or size case-insensitively', () => {
+    const blueMatch = searchProducts(productsMap, 'OCEAN');
+    expect(blueMatch).toHaveLength(1);
+    expect(blueMatch[0]?.id).toBe(1);
+
+    const sizeMatch = searchProducts(productsMap, '750ML');
+    expect(sizeMatch).toHaveLength(1);
+    expect(sizeMatch[0]?.id).toBe(2);
+  });
+
+  it('handles products with missing colour and size', () => {
+    expect(searchProducts(productsMap, 'plain')).toEqual([productsMap.get(3)]);
+    expect(searchProducts(productsMap, 'not-present')).toEqual([]);
+  });
+});

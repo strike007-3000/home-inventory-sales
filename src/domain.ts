@@ -963,7 +963,7 @@ export function getInventoryValuation(state: InventoryState): {
 
 
 /**
- * Search active products by name or SKU (case-insensitive).
+ * Search active products by name, SKU, colour, or size (case-insensitive).
  */
 export function searchProducts(
   products: ReadonlyMap<ProductId, Product>,
@@ -987,8 +987,10 @@ export function searchProducts(
 
     const nameMatch = product.name.toLowerCase().includes(normalized);
     const skuMatch = product.sku?.toLowerCase().includes(normalized) ?? false;
+    const colourMatch = product.colour?.toLowerCase().includes(normalized) ?? false;
+    const sizeMatch = product.size?.toLowerCase().includes(normalized) ?? false;
 
-    if (nameMatch || skuMatch) {
+    if (nameMatch || skuMatch || colourMatch || sizeMatch) {
       result.push(product);
     }
   }

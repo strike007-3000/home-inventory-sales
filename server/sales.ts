@@ -1,4 +1,4 @@
-import type { CancelSaleRequest, CreateSaleRequest, PaymentDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO } from '../shared/contracts';
+import type { CancelSaleRequest, CreateSaleRequest, PaymentDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, UpdateSaleRequest } from '../shared/contracts';
 import { errorResponse, jsonResponse, requireJsonBody } from './validation';
 
 type ProductRow = {
@@ -355,5 +355,42 @@ export async function handleCancelSale(id: number, request: Request, env: Env): 
   } catch {
     return errorResponse('Cancellation failed; no changes were made', 500);
   }
+  return jsonResponse(await readSale(id, env));
+}
+
+export async function handleUpdateSale(id: number, request: Request, env: Env): Promise<Response> {
+  const body = await requireJsonBody<UpdateSaleRequest>(request);
+  if (body instanceof Response) return body;
+
+  const existingSale = await env.DB.prepare('SELECT id, sale_date, customer_name FROM sales WHERE id = ?').bind(id).first<SaleRow>();
+  if (!existingSale) return errorResponse('Sale not found', 404);
+
+  let newSaleDate = existingSale.sale_date;
+  if (body.saleDate !== undefined) {
+    if (typeof body.saleDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.saleDate)) {
+      return errorResponse('Sale date must be a valid date', 400, 'saleDate');
+    }
+    const parsedSaleDate = new Date(`${body.saleDate}T00:00:00Z`);
+    if (Number.isNaN(parsedSaleDate.getTime()) || parsedSaleDate.toISOString().slice(0, 10) !== body.saleDate) {
+      return errorResponse('Sale date must be a valid date', 400, 'saleDate');
+    }
+    newSaleDate = body.saleDate;
+  }
+
+  let newCustomerName = existingSale.customer_name;
+  if (body.customerName !== undefined) {
+    if (body.customerName !== null && typeof body.customerName !== 'string') {
+      return errorResponse('Customer name must be text or null', 400, 'customerName');
+    }
+    const customerName = body.customerName?.trim() || null;
+    if (customerName && customerName.length > 200) {
+      return errorResponse('Customer name must be at most 200 characters', 400, 'customerName');
+    }
+    newCustomerName = customerName;
+  }
+
+  await env.DB.prepare('UPDATE sales SET sale_date = ?, customer_name = ? WHERE id = ?')
+    .bind(newSaleDate, newCustomerName, id).run();
+
   return jsonResponse(await readSale(id, env));
 }

@@ -2,6 +2,10 @@ import { useState } from 'preact/hooks';
 import { useProducts, useCreateProduct, useUpdateProduct, useToggleProduct, useLocations, type ProductFormData } from '../hooks/useProducts';
 import { formatInr } from '../domain';
 import { ProductForm } from './ProductForm';
+import { useStockChange } from '../hooks/useStock';
+import type { Product } from '../domain';
+import type { StockChangeReason } from '../../shared/contracts';
+import { ApiError } from '../api';
 import {
   SearchIcon,
   PlusIcon,
@@ -10,15 +14,140 @@ import {
   XIcon,
 } from '../icons';
 
+const STOCK_REASONS: readonly { value: StockChangeReason; label: string }[] = [
+  { value: 'delivery', label: 'Stock arrived' },
+  { value: 'count', label: 'Stock count' },
+  { value: 'damaged', label: 'Damaged' },
+  { value: 'lost', label: 'Lost' },
+  { value: 'sample', label: 'Sample' },
+  { value: 'personal-use', label: 'Personal use' },
+  { value: 'incorrect-entry', label: 'Incorrect entry' },
+  { value: 'other', label: 'Other' },
+];
+
+function formatDelta(value: number): string {
+  const formatted = value !== 0 && Math.abs(value) < 1e-12
+    ? value.toExponential(3)
+    : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 12 }).format(value);
+  return value > 0 ? `+${formatted}` : formatted;
+}
+
+interface StockChangeFormProps {
+  product: Product;
+  onCancel: () => void;
+  onSaved: () => Promise<void>;
+  onConflict: () => Promise<void>;
+}
+
+function StockChangeForm({ product, onCancel, onSaved, onConflict }: StockChangeFormProps) {
+  const [quantity, setQuantity] = useState(String(product.quantity));
+  const [setStockQuantity, setSetStockQuantity] = useState(String(product.setStockQuantity ?? 0));
+  const [reason, setReason] = useState<StockChangeReason | ''>('');
+  const [note, setNote] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const { execute, loading, error } = useStockChange();
+
+  const nextQuantity = Number(quantity);
+  const nextSetStock = Number(setStockQuantity);
+  const quantityValid = Number.isSafeInteger(nextQuantity) && nextQuantity >= 0;
+  const setStockValid = Number.isFinite(nextSetStock) && nextSetStock >= 0;
+  const changed = quantityValid && setStockValid &&
+    (nextQuantity !== product.quantity || nextSetStock !== (product.setStockQuantity ?? 0));
+
+  const handleSubmit = async (event: Event) => {
+    event.preventDefault();
+    setFormError(null);
+    if (!quantityValid) return setFormError('Individual QTY must be a whole number of 0 or more.');
+    if (!setStockValid) return setFormError('Stock/set must be 0 or more.');
+    if (!reason) return setFormError('Choose why the stock is changing.');
+    if (!changed) return setFormError('Change at least one stock value.');
+    if (note.trim().length > 500) return setFormError('Note must be at most 500 characters.');
+
+    const quantityDelta = nextQuantity - product.quantity;
+    const setStockDelta = nextSetStock - (product.setStockQuantity ?? 0);
+    if (reason === 'delivery' && (quantityDelta < 0 || setStockDelta < 0)) {
+      return setFormError('Stock arrived cannot decrease either stock value. Use Stock count or Incorrect entry instead.');
+    }
+    if (['damaged', 'lost', 'sample', 'personal-use'].includes(reason) && (quantityDelta > 0 || setStockDelta > 0)) {
+      return setFormError(`${STOCK_REASONS.find((item) => item.value === reason)?.label} cannot increase either stock value. Use Stock count or Incorrect entry instead.`);
+    }
+
+    try {
+      const result = await execute({
+        productId: product.id,
+        expectedVersion: product.version,
+        quantity: nextQuantity,
+        setStockQuantity: nextSetStock,
+        reason,
+        note: note.trim() || null,
+      });
+      if (result) await onSaved();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) await onConflict();
+    }
+  };
+
+  return (
+    <form class="card stock-change-form" onSubmit={handleSubmit}>
+      <div class="stock-change-heading">
+        <div>
+          <div class="text-sm text-ink-light">Change stock</div>
+          <h2 class="card-title text-xl">{product.name}</h2>
+          {(product.colour || product.size) && <div class="card-subtitle">{[product.colour, product.size].filter(Boolean).join(' · ')}</div>}
+        </div>
+        {product.sku && <span class="product-meta-token code">{product.sku}</span>}
+      </div>
+
+      {(formError || error) && <div class="error-message mb-4" role="alert">{formError || error}</div>}
+
+      <div class="stock-change-inputs">
+        <div class="form-group">
+          <label class="form-label" for="changeQuantity">New individual QTY</label>
+          <input id="changeQuantity" class="form-input" type="number" min="0" step="1" inputMode="numeric" value={quantity} onInput={(event) => setQuantity((event.target as HTMLInputElement).value)} disabled={loading} required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="changeSetStock">New Stock/set</label>
+          <input id="changeSetStock" class="form-input" type="number" min="0" step="any" inputMode="decimal" value={setStockQuantity} onInput={(event) => setSetStockQuantity((event.target as HTMLInputElement).value)} disabled={loading} required />
+        </div>
+      </div>
+
+      <div class="stock-change-preview" aria-live="polite">
+        <div><span>Individual QTY</span><strong>{product.quantity} → {quantityValid ? nextQuantity : '—'}</strong><small>{changed && quantityValid ? formatDelta(nextQuantity - product.quantity) : 'No change'}</small></div>
+        <div><span>Stock/set</span><strong>{product.setStockQuantity ?? 0} → {setStockValid ? nextSetStock : '—'}</strong><small>{changed && setStockValid ? formatDelta(nextSetStock - (product.setStockQuantity ?? 0)) : 'No change'}</small></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="stockReason">Reason <span class="required-asterisk">*</span></label>
+        <select id="stockReason" class="form-input" value={reason} onInput={(event) => setReason((event.target as HTMLSelectElement).value as StockChangeReason)} disabled={loading} required>
+          <option value="">Choose a reason</option>
+          {STOCK_REASONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="stockNote">Note (optional)</label>
+        <input id="stockNote" class="form-input" value={note} onInput={(event) => setNote((event.target as HTMLInputElement).value)} placeholder="Add context for the stock history" maxLength={500} disabled={loading} />
+      </div>
+      <p class="stock-audit-note">This change will be saved in stock history with its reason.</p>
+      <div class="stock-change-actions">
+        <button type="button" class="btn btn-secondary" onClick={onCancel} disabled={loading}>Cancel</button>
+        <button type="submit" class="btn btn-primary" disabled={loading}>{loading ? 'Saving…' : 'Save stock change'}</button>
+      </div>
+    </form>
+  );
+}
+
 interface ProductListProps {
   activeFilter?: 'active' | 'inactive' | 'all';
   onNavigate?: (route: any) => void;
+  onProductsChanged?: () => Promise<void>;
 }
 
-export function ProductList({ activeFilter = 'all', onNavigate }: ProductListProps) {
+export function ProductList({ activeFilter = 'all', onNavigate, onProductsChanged }: ProductListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingProduct, setEditingProduct] = useState<number | null>(null);
   const [creatingProduct, setCreatingProduct] = useState(false);
+  const [changingStock, setChangingStock] = useState<number | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   const {
     products,
@@ -32,6 +161,17 @@ export function ProductList({ activeFilter = 'all', onNavigate }: ProductListPro
   const { updateProduct } = useUpdateProduct();
   const { toggleProduct, loading: toggling } = useToggleProduct();
   const { locations, loading: locationsLoading, error: locationsError } = useLocations();
+
+  const refreshViews = async () => {
+    setMutationError(null);
+    const results = await Promise.allSettled([
+      refetch(),
+      ...(onProductsChanged ? [onProductsChanged()] : []),
+    ]);
+    if (results.some((result) => result.status === 'rejected')) {
+      setMutationError('Changes were saved, but the latest product list could not be refreshed. Reopen Products to try again.');
+    }
+  };
 
   // Use local filter for display, refetch from API
   const filteredProducts = products.filter(product => {
@@ -53,38 +193,45 @@ export function ProductList({ activeFilter = 'all', onNavigate }: ProductListPro
 
 
   const handleCreate = async (data: ProductFormData) => {
+    setMutationError(null);
     const result = await createProduct(data);
     if (result) {
-      refetch();
       setCreatingProduct(false);
+      await refreshViews();
     }
   };
 
   const handleUpdate = async (id: number, data: ProductFormData) => {
+    setMutationError(null);
     const existing = products.find(p => p.id === id);
     if (!existing) return;
     const result = await updateProduct(id, data, existing.version);
     if (result) {
-      refetch();
       setEditingProduct(null);
+      await refreshViews();
     }
   };
 
   const handleToggleActive = async (id: number, currentActive: boolean) => {
-    const result = await toggleProduct(id, !currentActive);
-    if (result) {
-      refetch();
+    setMutationError(null);
+    try {
+      const result = await toggleProduct(id, !currentActive);
+      if (result) await refreshViews();
+    } catch (err) {
+      setMutationError(err instanceof Error ? err.message : 'Failed to update product status');
     }
   };
 
   const handleCancel = () => {
     setEditingProduct(null);
     setCreatingProduct(false);
+    setChangingStock(null);
   };
 
   const activeCount = products.filter(p => p.active).length;
   const inactiveCount = products.filter(p => !p.active).length;
   const productBeingEdited = products.find((product) => product.id === editingProduct);
+  const productChangingStock = products.find((product) => product.id === changingStock);
   const editInitialData: ProductFormData | undefined = productBeingEdited ? {
     name: productBeingEdited.name,
     sku: productBeingEdited.sku ?? '',
@@ -114,10 +261,10 @@ export function ProductList({ activeFilter = 'all', onNavigate }: ProductListPro
                 onClick={() => onNavigate('stock')}
                 type="button"
               >
-                Update stock
+                Stock tasks
               </button>
             )}
-            {!creatingProduct && !editingProduct && (
+            {!creatingProduct && !editingProduct && !changingStock && (
               <button
                 class="btn btn-primary btn-sm"
                 onClick={() => setCreatingProduct(true)}
@@ -141,8 +288,7 @@ export function ProductList({ activeFilter = 'all', onNavigate }: ProductListPro
               aria-label="Search products"
             />
           </div>
-          <div class="sales-search-actions">
-            <button class="btn btn-navy" type="button" onClick={() => refetch()}>Search</button>
+          <div class="sales-search-actions product-search-actions">
             <button class="btn btn-secondary" type="button" onClick={() => setSearchQuery('')} disabled={!searchQuery}>Reset</button>
           </div>
         </div>
@@ -152,6 +298,8 @@ export function ProductList({ activeFilter = 'all', onNavigate }: ProductListPro
             {fetchError}
           </div>
         )}
+
+        {mutationError && <div class="error-message mb-4" role="alert">{mutationError}</div>}
 
         {locationsError && (
           <div class="error-message mb-4" role="alert">{locationsError}</div>
@@ -173,6 +321,22 @@ export function ProductList({ activeFilter = 'all', onNavigate }: ProductListPro
             onSave={(data) => handleUpdate(editingProduct, data)}
             onCancel={handleCancel}
             isEditing={true}
+            onChangeStock={() => {
+              setChangingStock(editingProduct);
+              setEditingProduct(null);
+            }}
+          />
+        ) : productChangingStock ? (
+          <StockChangeForm
+            product={productChangingStock}
+            onCancel={handleCancel}
+            onSaved={async () => {
+              setChangingStock(null);
+              await refreshViews();
+            }}
+            onConflict={async () => {
+              await Promise.allSettled([refetch()]);
+            }}
           />
         ) : (
           <>
@@ -200,82 +364,70 @@ export function ProductList({ activeFilter = 'all', onNavigate }: ProductListPro
                 )}
               </div>
             ) : (
-              <div class="product-list" aria-live="polite">
+              <div class="product-list">
                 {filteredProducts.map((product) => (
-                  <div
+                  <article
                     key={product.id}
-                    class="list-item product-list-row"
+                    class="product-list-row"
                   >
-                    <div class="flex-1">
-                      <div class="flex items-start justify-between">
-                        <div>
-                          <div class="font-semibold">{product.name}</div>
+                    <div class="product-identity">
+                          <div class="product-name">{product.name}</div>
                           {(product.colour || product.size) && (
                             <div class="text-sm text-ink-light">
                               {[product.colour, product.size].filter(Boolean).join(' · ')}
                             </div>
                           )}
-                          {product.sku && (
-                            <div class="text-sm text-ink-light code">
-                              SKU: {product.sku}
-                            </div>
-                          )}
-                          {product.category && (
-                            <div class="text-sm text-ink-light">
-                              {product.category}
-                            </div>
-                          )}
-                          {product.locationName && (
-                            <div class="text-sm text-ink-light">{product.locationName}</div>
-                          )}
-                        </div>
-                        <div class="product-status-badge">
+                          <div class="product-meta-line">
+                            {product.sku && <span class="product-meta-token code">{product.sku}</span>}
+                            {product.category && <span>{product.category}</span>}
+                            {product.locationName && <span>{product.locationName}</span>}
+                          </div>
+                        <div class="product-status-badges">
+                          {product.quantity === 0 ? <span class="status-chip status-chip-out-of-stock">Out of stock</span> : product.quantity <= product.lowStockLevel ? <span class="status-chip status-chip-low-stock">Low stock</span> : null}
                           {product.personalUse && (
                             <span class="status-chip status-chip-warning">Keep aside</span>
                           )}
-                          {product.active ? (
-                            <span class="status-chip status-chip-success">
-                              Active
-                            </span>
-                          ) : (
+                          {!product.active && (
                             <span class="status-chip status-chip-muted">
                               Inactive
                             </span>
                           )}
                         </div>
-                      </div>
                     </div>
 
-                    <div class="product-list-meta">
-                      <div class="font-semibold text-lg">SRP {formatInr(product.pricePaise)} / Stock</div>
-                      {product.mrpPaise !== null && product.mrpPaise !== undefined && (
-                        <div class="text-sm text-ink-light">MRP {formatInr(product.mrpPaise)} / Stock</div>
-                      )}
-                      <div class={product.quantity === 0 ? 'text-error' : product.quantity <= product.lowStockLevel ? 'text-marigold' : 'text-ink-light'}>
-                        {product.quantity === 0 ? 'Out of stock' : `${product.quantity} individual`}
-                      </div>
-                      <div class="text-sm text-ink-light">{product.setStockQuantity ?? 0} sets</div>
+                    <div class="product-inventory">
+                      <div><span>QTY</span><strong>{product.quantity}</strong></div>
+                      <div><span>Stock/set</span><strong>{product.setStockQuantity ?? 0}</strong></div>
+                      <div><span>SRP</span><strong>{formatInr(product.pricePaise)}</strong></div>
                     </div>
 
                     <div class="product-actions">
                       <button
-                        class="btn btn-ghost btn-sm"
+                        class="btn btn-soft-blue btn-sm"
+                        onClick={() => setChangingStock(product.id)}
+                        type="button"
+                        disabled={toggling}
+                      >
+                        Change stock
+                      </button>
+                      <button
+                        class="btn btn-secondary btn-sm"
                         onClick={() => setEditingProduct(product.id)}
                         type="button"
                         disabled={toggling}
                       >
-                        <EditIcon />
+                        <EditIcon /> Edit details
                       </button>
                       <button
-                        class="btn btn-ghost btn-sm"
+                        class="btn btn-ghost btn-sm product-toggle"
                         onClick={() => handleToggleActive(product.id, product.active)}
                         type="button"
                         disabled={toggling}
                       >
-                        {product.active ? <XIcon /> : <CheckIcon />}
+                        {product.active ? <><XIcon /> Deactivate</> : <><CheckIcon /> Activate</>}
                       </button>
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div>
             )}

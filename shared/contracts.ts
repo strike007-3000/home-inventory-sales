@@ -90,6 +90,7 @@ export interface MovementDTO {
   readonly productId: number;
   readonly productName: string;
   readonly quantityDelta: number;
+  readonly setStockDelta: number;
   readonly reason: string;
   readonly saleId: number | null;
   readonly stockEntryId: number | null;
@@ -179,6 +180,32 @@ export interface StockCountRequest {
   readonly note?: string;
 }
 
+export type StockChangeReason =
+  | 'delivery'
+  | 'count'
+  | 'damaged'
+  | 'lost'
+  | 'sample'
+  | 'personal-use'
+  | 'incorrect-entry'
+  | 'other';
+
+export interface StockChangeRequest {
+  readonly productId: number;
+  readonly expectedVersion: number;
+  readonly quantity: number;
+  readonly setStockQuantity: number;
+  readonly reason: StockChangeReason;
+  readonly note?: string | null;
+}
+
+export interface StockChangeResponse {
+  readonly ok: true;
+  readonly product: ProductDTO;
+  readonly quantityDelta: number;
+  readonly setStockDelta: number;
+}
+
 export interface StockAdjustmentRequest {
   readonly productId: number;
   readonly reason: string;
@@ -188,6 +215,11 @@ export interface StockAdjustmentRequest {
 
 export interface CancelSaleRequest {
   readonly reason: string;
+}
+
+export interface UpdateSaleRequest {
+  readonly customerName?: string | null;
+  readonly saleDate?: string;
 }
 
 export interface ImportCommitRequest {

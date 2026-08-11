@@ -24,17 +24,21 @@ Home Inventory helps one or two family members run a small home inventory busine
 ## Supported workflows
 
 1. Find and edit products.
-2. Receive, count, or correct stock with an audit reason.
-3. Record a sale, customer, date, price, discount, and payment.
-4. Leave a sale unpaid or partially paid and record later payments.
-5. Search older sales and cancel an incorrect sale, reversing stock.
-6. Look up LIDS market prices separately.
+2. Change a product's individual QTY and Stock/set together with an audit reason and optional note.
+3. Receive, physically count, or correct stock through dedicated stock tasks.
+4. Record a sale using colour and size to distinguish product variants.
+5. Go back to adjust a draft sale or explicitly discard it before stock changes.
+6. Correct a recorded sale's customer name or sale date without changing its items, money, payments, stock, or original recorded time.
+7. Leave a sale unpaid or partially paid and record later payments.
+8. Search older sales and cancel an incorrect sale, reversing stock.
+9. Look up LIDS market prices separately.
 
 ## Product principles
 
 - Prefer one obvious primary action per screen.
 - Use plain language and visible consequences.
 - Never silently change stock or financial history.
+- Keep product details and stock changes as separate, clearly labelled actions.
 - Keep routine workflows usable with touch and without training.
 - Add features only when they solve a demonstrated operating need.
 
