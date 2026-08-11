@@ -1799,7 +1799,7 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
         <div class="flex justify-between items-start mb-2">
           <h1 class="text-2xl font-semibold">Sale #{sale.saleNumber}</h1>
           {!isEditingDetails && (
-            <button class="btn btn-ghost btn-sm" onClick={startEditDetails} type="button">
+            <button class="btn btn-secondary btn-sm" onClick={startEditDetails} type="button">
               Edit sale details
             </button>
           )}
