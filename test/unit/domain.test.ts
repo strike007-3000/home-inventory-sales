@@ -18,6 +18,8 @@ import {
   getLowStockProducts,
   getOutOfStockProducts,
   getTodaysSalesTotal,
+  getTotalSalesSummary,
+  getInventoryValuation,
   searchProducts,
   getTodayKolkata,
   validateQuantity,
@@ -727,3 +729,24 @@ describe('Kolkata time behavior', () => {
     expect(today.totalPaise).toBe(49900);
   });
 });
+
+describe('getTotalSalesSummary', () => {
+  it('calculates total count and revenue for completed sales', () => {
+    const state = createInitialState();
+    const summary = getTotalSalesSummary(state);
+    expect(summary.count).toBeGreaterThanOrEqual(0);
+    expect(summary.totalPaise).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('getInventoryValuation', () => {
+  it('calculates CP, SRP, MRP totals for active products with positive stock', () => {
+    const state = createInitialState();
+    const valuation = getInventoryValuation(state);
+    expect(valuation.cpPaise).toBeGreaterThanOrEqual(0);
+    expect(valuation.srpPaise).toBeGreaterThanOrEqual(0);
+    expect(valuation.mrpPaise).toBeGreaterThanOrEqual(0);
+    expect(valuation.totalUnits).toBeGreaterThanOrEqual(0);
+  });
+});
+

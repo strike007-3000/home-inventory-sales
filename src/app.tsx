@@ -13,6 +13,8 @@ import {
   getLowStockProducts,
   getOutOfStockProducts,
   getTodaysSalesTotal,
+  getTotalSalesSummary,
+  getInventoryValuation,
   getSaleLineQuantity,
   setSaleLineQuantity,
   setSaleLineUnitPrice,
@@ -141,8 +143,11 @@ interface HomeScreenProps {
 }
 
 function HomeScreen({ state, onNavigate }: HomeScreenProps) {
-  const lowStock = getLowStockProducts(state);
-  const outOfStock = getOutOfStockProducts(state);
+  const lowStock = useMemo(() => getLowStockProducts(state), [state]);
+  const outOfStock = useMemo(() => getOutOfStockProducts(state), [state]);
+  const totalSales = useMemo(() => getTotalSalesSummary(state), [state.sales]);
+  const inventoryValuation = useMemo(() => getInventoryValuation(state), [state.products]);
+
   const localToday = useMemo(() => {
     const now = new Date();
     return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
@@ -215,42 +220,31 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
           </div>
         </div>
 
-        {/* Top 4 KPI Metric Cards Grid */}
+        {/* KPI Metric Cards Grid */}
         <div class="home-metric-grid mb-4">
+          {/* Card 1: Today's Revenue */}
           <div class="card flex items-center justify-between">
             <div>
               <div class="summary-value">{todaySales.totalPaise > 0 ? formatInr(todaySales.totalPaise) : '₹0'}</div>
-              <div class="summary-label">Today's revenue</div>
+              <div class="summary-label">Today's revenue ({todaySales.count})</div>
             </div>
             <div class="summary-icon-badge">
               <SellIcon />
             </div>
           </div>
 
+          {/* Card 2: Total Revenue */}
           <div class="card flex items-center justify-between">
             <div>
-              <div class="summary-value">{todaySales.count}</div>
-              <div class="summary-label">{todaySales.count === 1 ? 'Sale today' : 'Sales today'}</div>
+              <div class="summary-value">{totalSales.totalPaise > 0 ? formatInr(totalSales.totalPaise) : '₹0'}</div>
+              <div class="summary-label">Total sale ({totalSales.count})</div>
             </div>
             <div class="summary-icon-badge green">
               <CheckIcon />
             </div>
           </div>
 
-          <button
-            class={`card card-clickable flex items-center justify-between ${lowStock.length > 0 ? 'alert-warning' : 'alert-clear'}`}
-            onClick={() => onNavigate('products')}
-            type="button"
-          >
-            <div>
-              <div class="summary-value">{lowStock.length}</div>
-              <div class="summary-label">Low stock items</div>
-            </div>
-            <div class={`summary-icon-badge ${lowStock.length > 0 ? 'amber' : 'green'}`}>
-              {lowStock.length > 0 ? <AlertIcon /> : <CheckIcon />}
-            </div>
-          </button>
-
+          {/* Card 3: Out of stock */}
           <button
             class={`card card-clickable flex items-center justify-between ${outOfStock.length > 0 ? 'alert-danger' : 'alert-clear'}`}
             onClick={() => onNavigate('products')}
@@ -264,6 +258,39 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
               {outOfStock.length > 0 ? <AlertIcon /> : <CheckIcon />}
             </div>
           </button>
+
+          {/* Card 4: Stock CP Value */}
+          <div class="card flex items-center justify-between">
+            <div>
+              <div class="summary-value">{inventoryValuation.cpPaise > 0 ? formatInr(inventoryValuation.cpPaise) : '₹0'}</div>
+              <div class="summary-label">Stock CP Value</div>
+            </div>
+            <div class="summary-icon-badge">
+              <StockIcon />
+            </div>
+          </div>
+
+          {/* Card 5: Stock SRP Value */}
+          <div class="card flex items-center justify-between">
+            <div>
+              <div class="summary-value">{inventoryValuation.srpPaise > 0 ? formatInr(inventoryValuation.srpPaise) : '₹0'}</div>
+              <div class="summary-label">Stock SRP Value</div>
+            </div>
+            <div class="summary-icon-badge green">
+              <SellIcon />
+            </div>
+          </div>
+
+          {/* Card 6: Stock MRP Value */}
+          <div class="card flex items-center justify-between">
+            <div>
+              <div class="summary-value">{inventoryValuation.mrpPaise > 0 ? formatInr(inventoryValuation.mrpPaise) : '₹0'}</div>
+              <div class="summary-label">Stock MRP Value</div>
+            </div>
+            <div class="summary-icon-badge purple">
+              <ClipboardIcon />
+            </div>
+          </div>
         </div>
 
         {/* Middle Row: Top Categories Breakdown & Past 7 Days Sales */}

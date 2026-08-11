@@ -284,6 +284,7 @@ button.card { font: inherit; color: inherit; }
 .summary-icon-badge.green { background: var(--green-soft); color: var(--green); }
 .summary-icon-badge.amber { background: var(--amber-soft); color: var(--amber); }
 .summary-icon-badge.red { background: var(--red-soft); color: var(--red); }
+.summary-icon-badge.purple { background: #f3e8ff; color: #7e22ce; }
 
 @media (min-width: 700px) {
   .main { padding-inline: 28px; padding-top: 38px; }
@@ -306,7 +307,7 @@ button.card { font: inherit; color: inherit; }
 
 @media (min-width: 1024px) {
   :root { --rail: 236px; }
-  .home-metric-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .home-metric-grid { grid-template-columns: repeat(3, 1fr); gap: 16px; }
   .app { padding-left: var(--rail); }
   .screen { min-height: 100vh; }
   .top-header-bar { display: none; }

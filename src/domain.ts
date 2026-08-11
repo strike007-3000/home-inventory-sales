@@ -904,6 +904,59 @@ export function getTodaysSalesTotal(state: InventoryState): {
 }
 
 /**
+ * Get total completed sales count and total revenue across all sales.
+ */
+export function getTotalSalesSummary(state: InventoryState): {
+  count: number;
+  totalPaise: number;
+} {
+  let count = 0;
+  let totalPaise = 0;
+
+  for (const sale of state.sales) {
+    if (sale.status === 'completed') {
+      count++;
+      totalPaise += sale.totalPaise;
+    }
+  }
+
+  return { count, totalPaise };
+}
+
+/**
+ * Calculate total inventory stock valuation for active products with positive stock.
+ * Returns CP (Consultant/Cost Price), SRP (Selling Price), MRP (Max Retail Price) total values in paise.
+ */
+export function getInventoryValuation(state: InventoryState): {
+  cpPaise: number;
+  srpPaise: number;
+  mrpPaise: number;
+  totalUnits: number;
+} {
+  let cpPaise = 0;
+  let srpPaise = 0;
+  let mrpPaise = 0;
+  let totalUnits = 0;
+
+  for (const product of state.products.values()) {
+    if (product.active && product.quantity > 0) {
+      const qty = product.quantity;
+      totalUnits += qty;
+      const cp = product.consultantPricePaise ?? product.pricePaise;
+      const srp = product.pricePaise;
+      const mrp = product.mrpPaise ?? product.pricePaise;
+
+      cpPaise += cp * qty;
+      srpPaise += srp * qty;
+      mrpPaise += mrp * qty;
+    }
+  }
+
+  return { cpPaise, srpPaise, mrpPaise, totalUnits };
+}
+
+
+/**
  * Search active products by name or SKU (case-insensitive).
  */
 export function searchProducts(
