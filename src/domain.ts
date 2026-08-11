@@ -939,16 +939,22 @@ export function getInventoryValuation(state: InventoryState): {
   let totalUnits = 0;
 
   for (const product of state.products.values()) {
-    if (product.active && product.quantity > 0) {
-      const qty = product.quantity;
-      totalUnits += qty;
-      const cp = product.consultantPricePaise ?? product.pricePaise;
-      const srp = product.pricePaise;
-      const mrp = product.mrpPaise ?? product.pricePaise;
+    if (product.active) {
+      const stockQty =
+        product.setStockQuantity !== undefined && product.setStockQuantity !== null
+          ? product.setStockQuantity
+          : product.quantity;
 
-      cpPaise += cp * qty;
-      srpPaise += srp * qty;
-      mrpPaise += mrp * qty;
+      if (stockQty > 0) {
+        totalUnits += product.quantity;
+        const cp = product.consultantPricePaise ?? product.pricePaise;
+        const srp = product.pricePaise;
+        const mrp = product.mrpPaise ?? product.pricePaise;
+
+        cpPaise += Math.round(cp * stockQty);
+        srpPaise += Math.round(srp * stockQty);
+        mrpPaise += Math.round(mrp * stockQty);
+      }
     }
   }
 
