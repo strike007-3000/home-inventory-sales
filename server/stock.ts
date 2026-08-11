@@ -10,7 +10,19 @@ import type {
   StockDeliveryRequest,
   StockCountRequest,
   StockAdjustmentRequest,
+  StockChangeRequest,
+  ProductDTO,
 } from '../shared/contracts';
+
+const STOCK_CHANGE_REASONS = new Set([
+  'delivery', 'count', 'damaged', 'lost', 'sample', 'personal-use',
+  'incorrect-entry', 'other',
+]);
+const STOCK_INCREASE_ONLY_REASONS = new Set(['delivery']);
+const STOCK_DECREASE_ONLY_REASONS = new Set([
+  'damaged', 'lost', 'sample', 'personal-use',
+]);
+const MAX_STOCK_NOTE_LENGTH = 500;
 
 // ============================================================================
 // Stock Delivery Handler (atomic with D1 batch)
@@ -351,5 +363,121 @@ async function handleStockAdjustment(
 }
 
 // ============================================================================
+// Unified stock change (absolute quantities, atomically audited)
+// ============================================================================
 
-export { handleStockDelivery, handleStockCount, handleStockAdjustment };
+async function handleStockChange(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const body = await requireJsonBody<StockChangeRequest>(request);
+  if (body instanceof Response) return body;
+
+  if (!Number.isSafeInteger(body.productId) || body.productId <= 0) {
+    return errorResponse('Product ID must be a positive integer within the safe range', 400, 'productId');
+  }
+  if (!Number.isSafeInteger(body.expectedVersion) || body.expectedVersion <= 0) {
+    return errorResponse('Expected version must be a positive integer within the safe range', 400, 'expectedVersion');
+  }
+  if (!Number.isSafeInteger(body.quantity) || body.quantity < 0) {
+    return errorResponse('Quantity must be a non-negative integer within the safe range', 400, 'quantity');
+  }
+  if (!Number.isFinite(body.setStockQuantity) || body.setStockQuantity < 0) {
+    return errorResponse('Set stock must be a non-negative finite number', 400, 'setStockQuantity');
+  }
+  if (typeof body.reason !== 'string' || !STOCK_CHANGE_REASONS.has(body.reason)) {
+    return errorResponse(`Reason must be one of: ${[...STOCK_CHANGE_REASONS].join(', ')}`, 400, 'reason');
+  }
+  if (body.note !== undefined && body.note !== null && typeof body.note !== 'string') {
+    return errorResponse('Note must be text', 400, 'note');
+  }
+  const note = body.note?.trim() || null;
+  if (note && note.length > MAX_STOCK_NOTE_LENGTH) {
+    return errorResponse(`Note must be at most ${MAX_STOCK_NOTE_LENGTH} characters`, 400, 'note');
+  }
+
+  const current = await env.DB.prepare(
+    `SELECT id, stock_quantity, set_stock_quantity, version
+     FROM products WHERE id = ?`,
+  ).bind(body.productId).first<{
+    id: number;
+    stock_quantity: number;
+    set_stock_quantity: number;
+    version: number;
+  }>();
+
+  if (!current) {
+    return errorResponse('Product not found', 404, 'productId');
+  }
+  if (current.version !== body.expectedVersion) {
+    return errorResponse('Conflict: product changed since it was loaded; please retry', 409, 'expectedVersion');
+  }
+
+  const quantityDelta = body.quantity - current.stock_quantity;
+  const setStockDelta = body.setStockQuantity - current.set_stock_quantity;
+  if (quantityDelta === 0 && setStockDelta === 0) {
+    return errorResponse('At least one stock value must change', 400);
+  }
+  if (STOCK_INCREASE_ONLY_REASONS.has(body.reason) && (quantityDelta < 0 || setStockDelta < 0)) {
+    return errorResponse('Delivery cannot decrease stock values', 400, 'reason');
+  }
+  if (STOCK_DECREASE_ONLY_REASONS.has(body.reason) && (quantityDelta > 0 || setStockDelta > 0)) {
+    return errorResponse(`${body.reason} cannot increase stock values`, 400, 'reason');
+  }
+
+  const now = new Date().toISOString();
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE products
+       SET stock_quantity = ?, set_stock_quantity = ?, updated_at = ?, version = version + 1
+       WHERE id = ? AND version = ?`,
+    ).bind(body.quantity, body.setStockQuantity, now, body.productId, body.expectedVersion),
+    env.DB.prepare(
+      `INSERT INTO stock_movements
+         (product_id, quantity_delta, set_stock_delta, reason, note, created_at)
+       SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
+    ).bind(body.productId, quantityDelta, setStockDelta, body.reason, note, now),
+  ]);
+
+  if ((results[0]?.meta.changes ?? 0) !== 1) {
+    return errorResponse('Conflict: product changed since it was loaded; please retry', 409, 'expectedVersion');
+  }
+
+  const updated = await env.DB.prepare(
+    `SELECT products.*,
+            (SELECT name FROM locations WHERE id = products.location_id) AS location_name
+     FROM products WHERE products.id = ?`,
+  ).bind(body.productId).first<Record<string, unknown>>();
+
+  if (!updated) {
+    return errorResponse('Product not found', 404, 'productId');
+  }
+
+  const product: ProductDTO = {
+    id: updated.id as number,
+    sku: updated.sku as string | null,
+    name: updated.name as string,
+    category: updated.category as string | null,
+    colour: updated.colour as string | null,
+    size: updated.size as string | null,
+    pricePaise: updated.selling_price_minor as number,
+    mrpPaise: updated.mrp_minor as number | null,
+    consultantPricePaise: updated.cost_price_minor as number | null,
+    quantity: updated.stock_quantity as number,
+    setStockQuantity: updated.set_stock_quantity as number,
+    lowStockLevel: updated.low_stock_level as number,
+    locationId: updated.location_id as number | null,
+    locationName: updated.location_name as string | null,
+    personalUse: (updated.personal_use as number) === 1,
+    active: (updated.active as number) === 1,
+    version: updated.version as number,
+    createdAt: updated.created_at as string,
+    updatedAt: updated.updated_at as string,
+  };
+
+  return jsonResponse({ ok: true, product, quantityDelta, setStockDelta });
+}
+
+// ============================================================================
+
+export { handleStockDelivery, handleStockCount, handleStockAdjustment, handleStockChange };

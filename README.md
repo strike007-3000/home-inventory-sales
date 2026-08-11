@@ -5,8 +5,10 @@ A private, touch-friendly inventory and sales application for a small home busin
 ## Current capabilities
 
 - Inventory catalogue with colour, optional size, QTY, Stock/set count, MRP, SRP/SP, consultant price, location, and self-use indication
-- Product search, editing, activation/deactivation, stock delivery, stock counts, and reasoned corrections
-- Sales with customer name, editable sale date, price overrides, discounts, payment method, partial/unpaid balances, later payments, and cancellation
+- Responsive product cards with colour/size details and labelled actions for product editing, activation, and audited stock changes
+- Stock delivery, physical counts, and reasoned corrections that update both individual QTY and fractional Stock/set values
+- Sales with editable customer name and sale date, colour-aware product selection, price overrides, discounts, payment method, partial/unpaid balances, later payments, and cancellation
+- Draft-safe sale flow with Back to items and explicit Discard sale actions
 - Searchable sales history with instant horizontal payment-status filter pills (`All sales`, `Paid`, `Unpaid`, `Partial`, `Cancelled`)
 - Unified 50/50 side-by-side search bars with Deep Midnight Navy Blue (`#0f2b5c`) search buttons across Sales, Products, and LIDS
 - Separate LIDS market-price lookup that never participates in inventory stock

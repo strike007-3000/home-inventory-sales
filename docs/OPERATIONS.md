@@ -69,7 +69,10 @@ After deployment:
 1. Confirm the Workers Build completed.
 2. Open your deployment URL and sign in.
 3. Verify Home, Products, Sales, LIDS, and Stock navigation.
-4. Avoid creating test transactions in production. If an exceptional test record is necessary, cancel it through the application; direct deletion is not a normal workflow.
+4. Confirm Products shows labelled Change stock and Edit details actions at phone and desktop widths.
+5. Confirm sale selection and review show product colour/size, Back to items preserves the draft, and Discard sale clears it.
+6. Confirm sale details allow customer/date correction without changing totals or stock.
+7. Avoid creating test transactions in production. If an exceptional test record is necessary, cancel it through the application; direct deletion is not a normal workflow.
 
 Useful read-only checks:
 

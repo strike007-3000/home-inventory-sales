@@ -32,7 +32,7 @@ Cloudflare D1 (binding: DB)
 - `locations` normalizes location labels but production location rows are not stored in Git.
 - `sales` and `sale_items` snapshot commercial details.
 - `sale_payments` is append-only and supports unpaid, partial, and later payments.
-- `stock_movements` explains every stock mutation.
+- `stock_movements` explains every stock mutation, including individual-QTY and Stock/set deltas.
 - `sale_cancellations` records reversals instead of deleting history.
 - `lid_references` is isolated from inventory tables and exposes a lookup view that falls back to MRP when SP is zero.
 
@@ -43,6 +43,8 @@ Cloudflare D1 (binding: DB)
 - Mutations require authentication, approved origin, and CSRF token.
 - Sales use idempotency keys and guarded D1 batches to prevent duplicate or partial stock changes.
 - Product edits do not silently rewrite stock; stock-specific endpoints own stock changes.
+- Unified stock corrections update QTY and Stock/set atomically, use optimistic product versions, and append both deltas to stock history.
+- Sale metadata updates are limited to customer name and sale date; sale items, totals, payments, stock, status, and the original `sold_at` timestamp remain unchanged.
 - Normal business mistakes are cancelled or corrected with audit records, not deleted.
 
 ## Intentional privacy boundary

@@ -603,7 +603,7 @@ export async function handleProductHistory(
 
   const batchResults = await env.DB.batch([
     env.DB.prepare(
-    `SELECT id, product_id, quantity_delta, reason, sale_id, stock_entry_id, note, created_at
+    `SELECT id, product_id, quantity_delta, set_stock_delta, reason, sale_id, stock_entry_id, note, created_at
      FROM stock_movements
      WHERE product_id = ?
      ORDER BY created_at DESC, id DESC
@@ -624,6 +624,7 @@ export async function handleProductHistory(
         id: record.id as number,
         productId: record.product_id as number,
         quantityDelta: record.quantity_delta as number,
+        setStockDelta: record.set_stock_delta as number,
         reason: record.reason as string,
         saleId: record.sale_id as number | null,
         stockEntryId: record.stock_entry_id as number | null,

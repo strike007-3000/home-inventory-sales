@@ -117,12 +117,9 @@ export function useCreateProduct() {
       setSuccess(true);
       return product;
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Failed to create product');
-      }
-      return null;
+      const failure = err instanceof Error ? err : new Error('Failed to create product');
+      setError(failure.message);
+      throw failure;
     } finally {
       setLoading(false);
     }
@@ -149,12 +146,9 @@ export function useUpdateProduct() {
       setSuccess(true);
       return product;
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Failed to update product');
-      }
-      return null;
+      const failure = err instanceof Error ? err : new Error('Failed to update product');
+      setError(failure.message);
+      throw failure;
     } finally {
       setLoading(false);
     }
@@ -182,12 +176,9 @@ export function useToggleProduct() {
       setSuccess(true);
       return product;
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Failed to update product status');
-      }
-      return null;
+      const failure = err instanceof Error ? err : new Error('Failed to update product status');
+      setError(failure.message);
+      throw failure;
     } finally {
       setLoading(false);
     }

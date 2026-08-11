@@ -205,6 +205,14 @@ Buttons feel dependable and explicit rather than promotional.
 - **Internal Padding:** 17–20px depending on viewport.
 - **Behavior:** Clickable cards shift to the quiet surface and strengthen their border. Home summary cards remain boxed by explicit user choice; operational lists may use dividers instead.
 
+### Product Rows
+
+Product rows use the same content and actions on phone, tablet, and desktop. Show product name and `Colour · Size` first, followed by compact SKU/category/location metadata, QTY, Stock/set, and SRP. Display only meaningful status chips such as Out of stock, Low stock, Keep aside, or Inactive.
+
+Use labelled **Change stock** and **Edit details** actions at every breakpoint. Change stock opens a focused form for absolute individual QTY and Stock/set values, a required reason, an optional note, and a before/after preview. Edit details keeps both stock fields read-only and links to the same Change stock flow.
+
+Stock reason copy must match the consequence: Stock arrived cannot decrease either value; damage, loss, sample, and personal-use reasons cannot increase either value; Stock count, Incorrect entry, and Other may correct in either direction.
+
 ### Inputs / Fields
 
 - **Style:** White field, strong hairline border, 10px radius, and at least 48px height.
@@ -241,5 +249,6 @@ Use a nearly opaque white fixed bar with a hairline top border for the current t
 - **Don't** add a second general-purpose accent colour; semantic colours are for status only.
 - **Don't** use shadows when a hairline divider or tonal surface already explains the structure.
 - **Don't** hide a primary action behind an unlabeled icon, hover state, or distant menu.
+- **Don't** combine ordinary product editing and audited stock changes into one save action.
 - **Don't** stretch mobile compositions across desktop widths; use the rail and task-oriented responsive rows.
 - **Don't** replace plain home-business language with retail, warehouse, or accounting jargon.

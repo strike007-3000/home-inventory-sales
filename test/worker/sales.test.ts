@@ -174,4 +174,74 @@ describe('Sale API', () => {
       total: { count: 1, totalPaise: 15000 },
     });
   });
+
+  it('updates sale customerName and saleDate (PUT /sales/:id)', async () => {
+    const productId = await addProduct();
+    const createdRes = await api('/api/sales', 'POST', {
+      idempotencyKey: 'update-metadata-test',
+      saleDate: '2026-07-10',
+      customerName: 'Original Name',
+      lines: [{ productId, quantity: 2, unitPricePaise: 15000, setStockAfter: 1 }],
+      discountPaise: 1000,
+      paymentMethod: 'upi',
+      receivedPaise: 29000,
+    });
+    const created = await createdRes.json<any>();
+    const originalSoldAt = created.soldAt;
+
+    // Valid update
+    const updateRes = await api(`/api/sales/${created.id}`, 'PUT', {
+      customerName: '  New Customer  ',
+      saleDate: '2026-07-20',
+    });
+    expect(updateRes.status).toBe(200);
+    const updated = await updateRes.json<any>();
+
+    // Trimming and updated fields
+    expect(updated.customerName).toBe('New Customer');
+    expect(updated.saleDate).toBe('2026-07-20');
+
+    // Preserved fields
+    expect(updated.soldAt).toBe(originalSoldAt);
+    expect(updated.lines).toEqual(created.lines);
+    expect(updated.subtotalPaise).toBe(created.subtotalPaise);
+    expect(updated.discountPaise).toBe(created.discountPaise);
+    expect(updated.totalPaise).toBe(created.totalPaise);
+    expect(updated.paymentMethod).toBe(created.paymentMethod);
+    expect(updated.paidPaise).toBe(created.paidPaise);
+    expect(updated.balancePaise).toBe(created.balancePaise);
+    expect(updated.paymentStatus).toBe(created.paymentStatus);
+    expect(updated.status).toBe(created.status);
+
+    // Empty customer name trims to null
+    const emptyCustRes = await api(`/api/sales/${created.id}`, 'PUT', {
+      customerName: '   ',
+    });
+    expect(emptyCustRes.status).toBe(200);
+    expect((await emptyCustRes.json<any>()).customerName).toBeNull();
+
+    // Confirm updated date affects dashboard date calculations
+    const dashOld = await api('/api/dashboard?date=2026-07-10');
+    expect((await dashOld.json<any>()).today.count).toBe(0);
+    const dashNew = await api('/api/dashboard?date=2026-07-20');
+    expect((await dashNew.json<any>()).today.count).toBe(1);
+
+    // Missing sale (404)
+    const notFoundRes = await api('/api/sales/999999', 'PUT', { customerName: 'Test' });
+    expect(notFoundRes.status).toBe(404);
+
+    // Malformed input validation (invalid date format)
+    const badDateRes = await api(`/api/sales/${created.id}`, 'PUT', { saleDate: '2026-13-45' });
+    expect(badDateRes.status).toBe(400);
+
+    // Customer name > 200 chars
+    const longNameRes = await api(`/api/sales/${created.id}`, 'PUT', { customerName: 'a'.repeat(201) });
+    expect(longNameRes.status).toBe(400);
+
+    for (const customerName of [123, {}, ['Customer']]) {
+      const badCustomerRes = await api(`/api/sales/${created.id}`, 'PUT', { customerName });
+      expect(badCustomerRes.status).toBe(400);
+      expect(await badCustomerRes.json<any>()).toMatchObject({ field: 'customerName' });
+    }
+  });
 });
