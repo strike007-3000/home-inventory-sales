@@ -1796,10 +1796,10 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
           <ChevronLeftIcon /> Back
         </button>
 
-        <div class="flex justify-between items-start mb-2">
+        <div class="sale-detail-header mb-2">
           <h1 class="text-2xl font-semibold">Sale #{sale.saleNumber}</h1>
           {!isEditingDetails && (
-            <button class="btn btn-secondary btn-sm" onClick={startEditDetails} type="button">
+            <button class="btn btn-primary sale-edit-button" onClick={startEditDetails} type="button">
               Edit sale details
             </button>
           )}
