@@ -224,7 +224,7 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
         <div class="home-metric-grid mb-4">
           {/* Card 1: Today's Revenue */}
           <div class="card flex items-center justify-between">
-            <div>
+            <div class="min-w-0 flex-1 mr-2">
               <div class="summary-value">{todaySales.totalPaise > 0 ? formatInr(todaySales.totalPaise) : '₹0'}</div>
               <div class="summary-label">Today's revenue ({todaySales.count})</div>
             </div>
@@ -235,7 +235,7 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
 
           {/* Card 2: Total Revenue */}
           <div class="card flex items-center justify-between">
-            <div>
+            <div class="min-w-0 flex-1 mr-2">
               <div class="summary-value">{totalSales.totalPaise > 0 ? formatInr(totalSales.totalPaise) : '₹0'}</div>
               <div class="summary-label">Total sale ({totalSales.count})</div>
             </div>
@@ -250,7 +250,7 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
             onClick={() => onNavigate('products')}
             type="button"
           >
-            <div>
+            <div class="min-w-0 flex-1 mr-2">
               <div class="summary-value">{outOfStock.length}</div>
               <div class="summary-label">Out of stock</div>
             </div>
@@ -261,7 +261,7 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
 
           {/* Card 4: Stock CP Value */}
           <div class="card flex items-center justify-between">
-            <div>
+            <div class="min-w-0 flex-1 mr-2">
               <div class="summary-value">{inventoryValuation.cpPaise > 0 ? formatInr(inventoryValuation.cpPaise) : '₹0'}</div>
               <div class="summary-label">Stock CP Value</div>
             </div>
@@ -272,7 +272,7 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
 
           {/* Card 5: Stock SRP Value */}
           <div class="card flex items-center justify-between">
-            <div>
+            <div class="min-w-0 flex-1 mr-2">
               <div class="summary-value">{inventoryValuation.srpPaise > 0 ? formatInr(inventoryValuation.srpPaise) : '₹0'}</div>
               <div class="summary-label">Stock SRP Value</div>
             </div>
@@ -283,7 +283,7 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
 
           {/* Card 6: Stock MRP Value */}
           <div class="card flex items-center justify-between">
-            <div>
+            <div class="min-w-0 flex-1 mr-2">
               <div class="summary-value">{inventoryValuation.mrpPaise > 0 ? formatInr(inventoryValuation.mrpPaise) : '₹0'}</div>
               <div class="summary-label">Stock MRP Value</div>
             </div>

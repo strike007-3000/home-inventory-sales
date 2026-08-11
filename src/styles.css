@@ -132,8 +132,8 @@ button.card { font: inherit; color: inherit; }
 .status-chip-out-of-stock { color: var(--red); background: var(--red-soft); }
 .status-chip-success { color: var(--green); background: var(--green-soft); }
 .status-chip-warning { color: var(--amber); background: var(--amber-soft); }
-.summary-value { font-size: 1.65rem; font-weight: 700; line-height: 1.2; letter-spacing: -.02em; min-height: 2rem; }
-.summary-label { margin-top: 4px; color: var(--muted); font-size: .9rem; min-height: 1.35rem; }
+.summary-value { font-size: clamp(1.25rem, 4.2vw, 1.65rem); font-weight: 700; line-height: 1.2; letter-spacing: -.02em; min-height: 1.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.summary-label { margin-top: 4px; color: var(--muted); font-size: .82rem; min-height: 1.2rem; line-height: 1.25; overflow-wrap: break-word; }
 .home-alerts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); min-height: 84px; }
 .home-alerts .card { margin: 0; border: 0; border-radius: 0; }
 .home-alerts .card + .card { border-left: 1px solid var(--line); }
@@ -263,8 +263,15 @@ button.card { font: inherit; color: inherit; }
 
 .home-metric-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.home-metric-grid .card {
+  min-width: 0;
+  padding: 14px 12px;
+  overflow: hidden;
 }
 .summary-icon-badge {
   width: 36px;
