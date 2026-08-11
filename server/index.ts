@@ -259,8 +259,15 @@ async function handleDashboard(url: URL, env: Env): Promise<Response> {
     `SELECT COUNT(*) AS count, COALESCE(SUM(total_minor), 0) AS total_minor
      FROM sales WHERE sale_date = ? AND status = 'completed'`,
   ).bind(requestedDate).first<{ count: number; total_minor: number }>();
+
+  const total = await env.DB.prepare(
+    `SELECT COUNT(*) AS count, COALESCE(SUM(total_minor), 0) AS total_minor
+     FROM sales WHERE status = 'completed'`,
+  ).first<{ count: number; total_minor: number }>();
+
   return jsonResponse({
     today: { count: today?.count ?? 0, totalPaise: today?.total_minor ?? 0 },
+    total: { count: total?.count ?? 0, totalPaise: total?.total_minor ?? 0 },
     lowStock: [],
     outOfStock: [],
     needsAttention: [],

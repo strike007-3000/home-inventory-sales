@@ -169,6 +169,9 @@ describe('Sale API', () => {
 
     const dashboard = await api('/api/dashboard?date=2026-07-14');
     expect(dashboard.status).toBe(200);
-    expect(await dashboard.json<any>()).toMatchObject({ today: { count: 1, totalPaise: 15000 } });
+    expect(await dashboard.json<any>()).toMatchObject({
+      today: { count: 1, totalPaise: 15000 },
+      total: { count: 1, totalPaise: 15000 },
+    });
   });
 });

@@ -145,7 +145,7 @@ interface HomeScreenProps {
 function HomeScreen({ state, onNavigate }: HomeScreenProps) {
   const lowStock = useMemo(() => getLowStockProducts(state), [state]);
   const outOfStock = useMemo(() => getOutOfStockProducts(state), [state]);
-  const totalSales = useMemo(() => getTotalSalesSummary(state), [state.sales]);
+  const fallbackTotalSales = useMemo(() => getTotalSalesSummary(state), [state.sales]);
   const inventoryValuation = useMemo(() => getInventoryValuation(state), [state.products]);
 
   const localToday = useMemo(() => {
@@ -154,12 +154,26 @@ function HomeScreen({ state, onNavigate }: HomeScreenProps) {
   }, []);
   const fallbackTodaySales = getTodaysSalesTotal(state);
   const [todaySales, setTodaySales] = useState(fallbackTodaySales);
+  const [totalSales, setTotalSales] = useState(fallbackTotalSales);
+
+  useEffect(() => {
+    setTodaySales(fallbackTodaySales);
+    setTotalSales(fallbackTotalSales);
+  }, [fallbackTodaySales.count, fallbackTodaySales.totalPaise, fallbackTotalSales.count, fallbackTotalSales.totalPaise]);
 
   useEffect(() => {
     apiGetJson<DashboardDTO>(`/dashboard?date=${localToday}`)
-      .then((dashboard) => setTodaySales(dashboard.today))
-      .catch(() => setTodaySales(fallbackTodaySales));
-  }, [localToday, fallbackTodaySales.count, fallbackTodaySales.totalPaise]);
+      .then((dashboard) => {
+        setTodaySales(dashboard.today);
+        if (dashboard.total) {
+          setTotalSales(dashboard.total);
+        }
+      })
+      .catch(() => {
+        setTodaySales(fallbackTodaySales);
+        setTotalSales(fallbackTotalSales);
+      });
+  }, [localToday, fallbackTodaySales.count, fallbackTodaySales.totalPaise, fallbackTotalSales.count, fallbackTotalSales.totalPaise]);
 
   const last7Days = useMemo(() => {
     const result: { dateStr: string; dayLabel: string; isToday: boolean; totalPaise: number }[] = [];

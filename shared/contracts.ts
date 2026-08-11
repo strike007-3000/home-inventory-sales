@@ -99,6 +99,7 @@ export interface MovementDTO {
 
 export interface DashboardDTO {
   readonly today: { readonly count: number; readonly totalPaise: number };
+  readonly total: { readonly count: number; readonly totalPaise: number };
   readonly lowStock: readonly ProductDTO[];
   readonly outOfStock: readonly ProductDTO[];
   readonly needsAttention: readonly ProductDTO[];
