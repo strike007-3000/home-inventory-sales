@@ -4,17 +4,12 @@
 import { useState, useCallback, useMemo, useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
 import { apiGetJson, apiPostJson, apiPutJson } from './api';
-import type { CreateSaleRequest, DashboardDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, UpdateSaleRequest } from '../shared/contracts';
+import type { CreateSaleRequest, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, UpdateSaleRequest } from '../shared/contracts';
 import {
   InventoryState,
   ProductId,
   Product,
   formatInr,
-  getLowStockProducts,
-  getOutOfStockProducts,
-  getTodaysSalesTotal,
-  getTotalSalesSummary,
-  getInventoryValuation,
   getSaleLineQuantity,
   setSaleLineQuantity,
   setSaleLineUnitPrice,
@@ -47,7 +42,6 @@ import {
   ProductsIcon,
   SearchIcon,
   CheckIcon,
-  AlertIcon,
   PackageIcon,
   ClipboardIcon,
   WrenchIcon,
@@ -59,6 +53,7 @@ import {
   AppLogo,
 } from './icons';
 import './styles.css';
+import { DashboardScreen } from './screens/dashboard';
 import { LoginScreen } from './screens/login';
 import { ProductList } from './components/ProductList';
 import { LidLookup } from './components/LidLookup';
@@ -144,279 +139,6 @@ function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
     </nav>
   );
 }
-
-// ============================================================================
-// Home Screen
-// ============================================================================
-
-interface HomeScreenProps {
-  state: InventoryState;
-  onNavigate: (route: Route) => void;
-}
-
-function HomeScreen({ state, onNavigate }: HomeScreenProps) {
-  const lowStock = useMemo(() => getLowStockProducts(state), [state]);
-  const outOfStock = useMemo(() => getOutOfStockProducts(state), [state]);
-  const fallbackTotalSales = useMemo(() => getTotalSalesSummary(state), [state.sales]);
-  const inventoryValuation = useMemo(() => getInventoryValuation(state), [state.products]);
-
-  const localToday = useMemo(() => {
-    const now = new Date();
-    return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-  }, []);
-  const fallbackTodaySales = getTodaysSalesTotal(state);
-  const [todaySales, setTodaySales] = useState(fallbackTodaySales);
-  const [totalSales, setTotalSales] = useState(fallbackTotalSales);
-
-  useEffect(() => {
-    setTodaySales(fallbackTodaySales);
-    setTotalSales(fallbackTotalSales);
-  }, [fallbackTodaySales.count, fallbackTodaySales.totalPaise, fallbackTotalSales.count, fallbackTotalSales.totalPaise]);
-
-  useEffect(() => {
-    apiGetJson<DashboardDTO>(`/dashboard?date=${localToday}`)
-      .then((dashboard) => {
-        setTodaySales(dashboard.today);
-        if (dashboard.total) {
-          setTotalSales(dashboard.total);
-        }
-      })
-      .catch(() => {
-        setTodaySales(fallbackTodaySales);
-        setTotalSales(fallbackTotalSales);
-      });
-  }, [localToday, fallbackTodaySales.count, fallbackTodaySales.totalPaise, fallbackTotalSales.count, fallbackTotalSales.totalPaise]);
-
-  const last7Days = useMemo(() => {
-    const result: { dateStr: string; dayLabel: string; isToday: boolean; totalPaise: number }[] = [];
-    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const now = new Date();
-
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 86_400_000);
-      const dateStr = new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-      const dayLabel = daysOfWeek[d.getDay()] || '';
-      result.push({ dateStr, dayLabel, isToday: i === 0, totalPaise: 0 });
-    }
-
-    for (const sale of state.sales) {
-      if (sale.soldAt) {
-        const saleDateStr = sale.soldAt.slice(0, 10);
-        const match = result.find((r) => r.dateStr === saleDateStr);
-        if (match) {
-          match.totalPaise += sale.totalPaise;
-        }
-      }
-    }
-
-    return result;
-  }, [state.sales]);
-
-  const maxSalesPaise = useMemo(() => {
-    return Math.max(1, ...last7Days.map((d) => d.totalPaise));
-  }, [last7Days]);
-
-  const topCategories = useMemo(() => {
-    const catMap = new Map<string, number>();
-    for (const product of state.products.values()) {
-      if (product.active && product.category && product.category.trim().length > 0) {
-        const cat = product.category.trim();
-        const current = catMap.get(cat) || 0;
-        catMap.set(cat, current + product.quantity);
-      }
-    }
-    const sorted = Array.from(catMap.entries())
-      .map(([name, qty]) => ({ name, qty }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 4);
-
-    const maxQty = Math.max(1, ...sorted.map((c) => c.qty));
-    return { categories: sorted, maxQty };
-  }, [state.products]);
-
-  const attentionProducts = [...outOfStock, ...lowStock.slice(0, 3)];
-
-  return (
-    <div class="screen">
-      <div class="main no-sticky-action">
-        <div class="page-header">
-          <h1 class="text-2xl font-semibold">Dashboard</h1>
-          <div class="header-actions">
-            <button class="btn btn-primary btn-sm" onClick={() => onNavigate('sell')} type="button">Record sale</button>
-          </div>
-        </div>
-
-        {/* KPI Metric Cards Grid */}
-        <div class="home-metric-grid mb-4">
-          {/* Card 1: Today's Revenue */}
-          <div class="card flex items-center justify-between">
-            <div class="min-w-0 flex-1 mr-2">
-              <div class="summary-value">{todaySales.totalPaise > 0 ? formatInr(todaySales.totalPaise) : '₹0'}</div>
-              <div class="summary-label">Today's revenue ({todaySales.count})</div>
-            </div>
-            <div class="summary-icon-badge">
-              <SellIcon />
-            </div>
-          </div>
-
-          {/* Card 2: Total Revenue */}
-          <div class="card flex items-center justify-between">
-            <div class="min-w-0 flex-1 mr-2">
-              <div class="summary-value">{totalSales.totalPaise > 0 ? formatInr(totalSales.totalPaise) : '₹0'}</div>
-              <div class="summary-label">Total sale ({totalSales.count})</div>
-            </div>
-            <div class="summary-icon-badge green">
-              <CheckIcon />
-            </div>
-          </div>
-
-          {/* Card 3: Out of stock */}
-          <button
-            class={`card card-clickable flex items-center justify-between ${outOfStock.length > 0 ? 'alert-danger' : 'alert-clear'}`}
-            onClick={() => onNavigate('products')}
-            type="button"
-          >
-            <div class="min-w-0 flex-1 mr-2">
-              <div class="summary-value">{outOfStock.length}</div>
-              <div class="summary-label">Out of stock</div>
-            </div>
-            <div class={`summary-icon-badge ${outOfStock.length > 0 ? 'red' : 'green'}`}>
-              {outOfStock.length > 0 ? <AlertIcon /> : <CheckIcon />}
-            </div>
-          </button>
-
-          {/* Card 4: Stock CP Value */}
-          <div class="card flex items-center justify-between">
-            <div class="min-w-0 flex-1 mr-2">
-              <div class="summary-value">{inventoryValuation.cpPaise > 0 ? formatInr(inventoryValuation.cpPaise) : '₹0'}</div>
-              <div class="summary-label">Stock CP Value</div>
-            </div>
-            <div class="summary-icon-badge">
-              <StockIcon />
-            </div>
-          </div>
-
-          {/* Card 5: Stock SRP Value */}
-          <div class="card flex items-center justify-between">
-            <div class="min-w-0 flex-1 mr-2">
-              <div class="summary-value">{inventoryValuation.srpPaise > 0 ? formatInr(inventoryValuation.srpPaise) : '₹0'}</div>
-              <div class="summary-label">Stock SRP Value</div>
-            </div>
-            <div class="summary-icon-badge green">
-              <SellIcon />
-            </div>
-          </div>
-
-          {/* Card 6: Stock MRP Value */}
-          <div class="card flex items-center justify-between">
-            <div class="min-w-0 flex-1 mr-2">
-              <div class="summary-value">{inventoryValuation.mrpPaise > 0 ? formatInr(inventoryValuation.mrpPaise) : '₹0'}</div>
-              <div class="summary-label">Stock MRP Value</div>
-            </div>
-            <div class="summary-icon-badge purple">
-              <ClipboardIcon />
-            </div>
-          </div>
-        </div>
-
-        {/* Middle Row: Top Categories Breakdown & Past 7 Days Sales */}
-        <div class="home-summary-row mb-4">
-          {/* Top Categories */}
-          <section>
-            <h2 class="text-lg font-semibold mb-3">Top categories</h2>
-            <div class="card">
-              {topCategories.categories.length === 0 ? (
-                <div class="text-sm text-ink-light py-4 text-center">No categories recorded yet</div>
-              ) : (
-                <div class="flex flex-col gap-3">
-                  {topCategories.categories.map((cat) => {
-                    const widthPercent = Math.max(12, Math.round((cat.qty / topCategories.maxQty) * 100));
-                    return (
-                      <div key={cat.name} class="category-row">
-                        <div class="flex items-center justify-between text-sm mb-1">
-                          <span class="font-semibold">{cat.name}</span>
-                          <span class="text-ink-light font-mono text-xs">{cat.qty} in stock</span>
-                        </div>
-                        <div class="w-full bg-line rounded-sm overflow-hidden" style={{ height: '8px' }}>
-                          <div class="bg-blue h-full rounded-sm transition-all" style={{ width: `${widthPercent}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* Past 7 Days Chart */}
-          <section>
-            <h2 class="text-lg font-semibold mb-3">Past 7 days</h2>
-            <div class="card">
-              <div class="text-xs font-semibold text-ink-light mb-3">Daily sales trend (₹)</div>
-              <div class="flex items-end justify-between gap-2" style={{ height: '110px' }}>
-                {last7Days.map((d) => {
-                  const heightPercent = d.totalPaise > 0 ? Math.max(16, Math.round((d.totalPaise / maxSalesPaise) * 100)) : 8;
-                  return (
-                    <div key={d.dateStr} class="flex-1 flex flex-col items-center gap-1 group relative chart-bar-col">
-                      {d.totalPaise > 0 && (
-                        <div class="chart-tooltip">
-                          {formatInr(d.totalPaise)}
-                        </div>
-                      )}
-                      <div
-                        class={`chart-bar w-full rounded-sm ${d.isToday ? 'bg-blue' : d.totalPaise > 0 ? 'bg-ink-light' : 'bg-line'}`}
-                        style={{ height: `${heightPercent}%`, opacity: d.isToday ? 1 : d.totalPaise > 0 ? 0.7 : 0.4 }}
-                      />
-                      <span class={`text-xs ${d.isToday ? 'font-bold text-blue' : 'text-ink-light'}`}>{d.dayLabel}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-        </div>
-
-        {/* Needs attention */}
-        <section class="mb-4">
-          <h2 class="text-lg font-semibold mb-3">Needs attention</h2>
-          {attentionProducts.length > 0 ? (
-            <div class="flex flex-col gap-2">
-              {attentionProducts.map((product) => (
-                <button
-                  key={product.id}
-                  class="card card-clickable flex items-center justify-between"
-                  onClick={() => onNavigate('products')}
-                  type="button"
-                >
-                  <div>
-                    <div class="font-semibold text-left">{product.name}</div>
-                    <div class="text-sm text-ink-light text-left mt-1">
-                      {product.quantity === 0 ? '0 in stock' : `${product.quantity} left`}
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    {product.quantity === 0 ? (
-                      <span class="status-chip status-chip-out-of-stock">Out of stock</span>
-                    ) : (
-                      <span class="status-chip status-chip-low-stock">Low stock</span>
-                    )}
-                    <ChevronRightIcon />
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div class="card flex items-center gap-3" style={{ background: 'var(--green-soft)', borderColor: 'rgba(20,122,82,0.25)' }}>
-              <span style={{ color: 'var(--green)' }}><CheckIcon /></span>
-              <span class="text-sm font-semibold text-success">Stock levels are all good!</span>
-            </div>
-          )}
-        </section>
-      </div>
-    </div>
-  );
-}
-
 // ============================================================================
 // Product Card Component
 // ============================================================================
@@ -2126,7 +1848,7 @@ export function App() {
   const renderScreen = () => {
     switch (route) {
       case 'home':
-        return <HomeScreen state={state} onNavigate={handleNavigate} />;
+        return <DashboardScreen state={state} onNavigate={handleNavigate} />;
       case 'sell':
         return <SellScreen state={state} onSaleDraftChange={handleSaleDraftChange} onNavigate={handleNavigate} />;
       case 'sales':
@@ -2161,7 +1883,7 @@ export function App() {
       case 'lids':
         return <LidLookup />;
       default:
-        return <HomeScreen state={state} onNavigate={handleNavigate} />;
+        return <DashboardScreen state={state} onNavigate={handleNavigate} />;
     }
   };
 
