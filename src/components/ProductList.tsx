@@ -137,14 +137,14 @@ function StockChangeForm({ product, onCancel, onSaved, onConflict }: StockChange
 }
 
 interface ProductListProps {
-  initialActiveFilter?: 'active' | 'inactive' | 'all';
+  initialActiveFilter?: 'active' | 'inactive' | 'all' | 'personal';
   selectedProductId?: number | null;
   onNavigate?: (route: any) => void;
   onProductsChanged?: () => Promise<void>;
 }
 
 export function ProductList({ initialActiveFilter = 'active', selectedProductId, onNavigate, onProductsChanged }: ProductListProps) {
-  const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all'>(initialActiveFilter);
+  const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all' | 'personal'>(initialActiveFilter);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingProduct, setEditingProduct] = useState<number | null>(null);
   const [creatingProduct, setCreatingProduct] = useState(false);
@@ -219,7 +219,8 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
 
     const matchesFilter = activeFilter === 'all' ||
       (activeFilter === 'active' && product.active) ||
-      (activeFilter === 'inactive' && !product.active);
+      (activeFilter === 'inactive' && !product.active) ||
+      (activeFilter === 'personal' && product.personalUse);
 
     return matchesSearch && matchesFilter;
   });
@@ -331,6 +332,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
               { value: 'active', label: 'Active' },
               { value: 'inactive', label: 'Inactive' },
               { value: 'all', label: 'All' },
+              { value: 'personal', label: 'Personal' },
             ] as const
           ).map((item) => (
             <button
@@ -405,7 +407,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
                 <div class="empty-state-icon"><SearchIcon /></div>
                 <h3 class="empty-state-title">No products found</h3>
                 <p class="empty-state-message">
-                  {searchQuery ? 'Try a different search.' : activeFilter !== 'all' ? 'No products in this category.' : 'Create your first product to get started.'}
+                  {searchQuery ? 'Try a different search.' : activeFilter !== 'all' ? 'No products match this filter.' : 'Create your first product to get started.'}
                 </p>
                 {!searchQuery && activeFilter === 'all' && (
                   <button
