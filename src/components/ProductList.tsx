@@ -154,6 +154,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
   // Fetch all products up to 1000 items once, apply active/inactive filtering on the client
   const {
     products,
+    total,
     loading,
     error: fetchError,
     refetch,
@@ -393,7 +394,9 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
           <>
             <div class="product-summary mb-4">
               <span class="text-sm text-ink-light">
-                Total: {products.length} products · Active: {activeCount} · Inactive: {inactiveCount}
+                {total > products.length
+                  ? `Showing ${products.length} of ${total} products`
+                  : `Total: ${total} products · Active: ${activeCount} · Inactive: ${inactiveCount}`}
               </span>
             </div>
 
