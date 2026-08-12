@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { useProducts, useCreateProduct, useUpdateProduct, useToggleProduct, useLocations, type ProductFormData } from '../hooks/useProducts';
 import { formatInr } from '../domain';
 import { ProductForm } from './ProductForm';
@@ -137,30 +137,62 @@ function StockChangeForm({ product, onCancel, onSaved, onConflict }: StockChange
 }
 
 interface ProductListProps {
-  activeFilter?: 'active' | 'inactive' | 'all';
+  initialActiveFilter?: 'active' | 'inactive' | 'all';
+  selectedProductId?: number | null;
   onNavigate?: (route: any) => void;
   onProductsChanged?: () => Promise<void>;
 }
 
-export function ProductList({ activeFilter = 'all', onNavigate, onProductsChanged }: ProductListProps) {
+export function ProductList({ initialActiveFilter = 'active', selectedProductId, onNavigate, onProductsChanged }: ProductListProps) {
+  const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all'>(initialActiveFilter);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingProduct, setEditingProduct] = useState<number | null>(null);
   const [creatingProduct, setCreatingProduct] = useState(false);
   const [changingStock, setChangingStock] = useState<number | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
 
+  // Fetch all products up to 1000 items once, apply active/inactive filtering on the client
   const {
     products,
-    total,
     loading,
     error: fetchError,
     refetch,
-  } = useProducts(activeFilter);
+  } = useProducts('all', 1000);
 
   const { createProduct } = useCreateProduct();
   const { updateProduct } = useUpdateProduct();
   const { toggleProduct, loading: toggling } = useToggleProduct();
   const { locations, loading: locationsLoading, error: locationsError } = useLocations();
+
+  // Track if auto-scrolling for selectedProductId has completed to ensure it runs only once per selection
+  const scrolledForIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!selectedProductId || loading) return;
+
+    // Run only once per selectedProductId
+    if (scrolledForIdRef.current === selectedProductId) return;
+    scrolledForIdRef.current = selectedProductId;
+
+    const targetId = selectedProductId;
+    let animId: number;
+
+    // Use requestAnimationFrame to scroll after DOM rendering
+    animId = requestAnimationFrame(() => {
+      const el = document.getElementById(`product-${targetId}`);
+      if (el) {
+        const prefersReduced = typeof window !== 'undefined' &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        el.scrollIntoView({ behavior: prefersReduced ? 'auto' : 'smooth', block: 'center' });
+      } else {
+        window.scrollTo(0, 0);
+      }
+    });
+
+    return () => {
+      cancelAnimationFrame(animId);
+    };
+  }, [selectedProductId, loading, products]);
 
   const refreshViews = async () => {
     setMutationError(null);
@@ -173,7 +205,7 @@ export function ProductList({ activeFilter = 'all', onNavigate, onProductsChange
     }
   };
 
-  // Use local filter for display, refetch from API
+  // Local filtering by search query and activity filter
   const filteredProducts = products.filter(product => {
     const normalizedQuery = searchQuery.toLowerCase();
     const matchesSearch = !searchQuery || [
@@ -190,7 +222,6 @@ export function ProductList({ activeFilter = 'all', onNavigate, onProductsChange
 
     return matchesSearch && matchesFilter;
   });
-
 
   const handleCreate = async (data: ProductFormData) => {
     setMutationError(null);
@@ -293,6 +324,26 @@ export function ProductList({ activeFilter = 'all', onNavigate, onProductsChange
           </div>
         </div>
 
+        <div class="sales-filter-pills mb-4" role="group" aria-label="Filter products by status">
+          {(
+            [
+              { value: 'active', label: 'Active' },
+              { value: 'inactive', label: 'Inactive' },
+              { value: 'all', label: 'All' },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              class={`filter-pill ${activeFilter === item.value ? 'selected' : ''}`}
+              aria-pressed={activeFilter === item.value}
+              onClick={() => setActiveFilter(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
         {fetchError && (
           <div class="error-message mb-4" role="alert">
             {fetchError}
@@ -342,7 +393,7 @@ export function ProductList({ activeFilter = 'all', onNavigate, onProductsChange
           <>
             <div class="product-summary mb-4">
               <span class="text-sm text-ink-light">
-                Total: {total} products · Active: {activeCount} · Inactive: {inactiveCount}
+                Total: {products.length} products · Active: {activeCount} · Inactive: {inactiveCount}
               </span>
             </div>
 
@@ -365,13 +416,22 @@ export function ProductList({ activeFilter = 'all', onNavigate, onProductsChange
               </div>
             ) : (
               <div class="product-list">
-                {filteredProducts.map((product) => (
-                  <article
-                    key={product.id}
-                    class="product-list-row"
-                  >
-                    <div class="product-identity">
-                          <div class="product-name">{product.name}</div>
+                {filteredProducts.map((product) => {
+                  const isSelected = selectedProductId === product.id;
+                  return (
+                    <article
+                      key={product.id}
+                      id={`product-${product.id}`}
+                      class={`product-list-row ${isSelected ? 'product-list-row-selected' : ''}`}
+                    >
+                      <div class="product-identity">
+                        {isSelected && (
+                          <div class="product-selected-badge mb-1">
+                            <span class="status-chip status-chip-highlighted">Opened from Home</span>
+                          </div>
+                        )}
+
+                        <div class="product-name">{product.name}</div>
                           {(product.colour || product.size) && (
                             <div class="text-sm text-ink-light">
                               {[product.colour, product.size].filter(Boolean).join(' · ')}
@@ -421,14 +481,14 @@ export function ProductList({ activeFilter = 'all', onNavigate, onProductsChange
                       <button
                         class="btn btn-ghost btn-sm product-toggle"
                         onClick={() => handleToggleActive(product.id, product.active)}
-                        type="button"
                         disabled={toggling}
                       >
                         {product.active ? <><XIcon /> Deactivate</> : <><CheckIcon /> Activate</>}
                       </button>
                     </div>
                   </article>
-                ))}
+                );
+              })}
               </div>
             )}
 

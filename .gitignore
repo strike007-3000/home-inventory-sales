@@ -4,7 +4,9 @@ dist/
 coverage/
 
 # Local tooling
+.agents/
 .vite/
+
 .wrangler/
 .pnpm-store/
 .private/
