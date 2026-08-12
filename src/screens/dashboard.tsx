@@ -23,7 +23,7 @@ type DashboardRoute = 'sell' | 'products';
 
 interface DashboardScreenProps {
   state: InventoryState;
-  onNavigate: (route: DashboardRoute) => void;
+  onNavigate: (route: DashboardRoute, selectedProductId?: number) => void;
 }
 
 export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
@@ -40,6 +40,8 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
   const [todaySales, setTodaySales] = useState(fallbackTodaySales);
   const [totalSales, setTotalSales] = useState(fallbackTotalSales);
 
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+
   useEffect(() => {
     setTodaySales(fallbackTodaySales);
     setTotalSales(fallbackTotalSales);
@@ -52,10 +54,12 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
         if (dashboard.total) {
           setTotalSales(dashboard.total);
         }
+        setRefreshError(null);
       })
       .catch(() => {
         setTodaySales(fallbackTodaySales);
         setTotalSales(fallbackTotalSales);
+        setRefreshError('Could not refresh — showing saved data.');
       });
   }, [localToday, fallbackTodaySales.count, fallbackTodaySales.totalPaise, fallbackTotalSales.count, fallbackTotalSales.totalPaise]);
 
@@ -70,6 +74,12 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
             <button class="btn btn-primary btn-sm" onClick={() => onNavigate('sell')} type="button">Record sale</button>
           </div>
         </div>
+
+        {refreshError && (
+          <div class="dashboard-refresh-message mb-4" role="status">
+            {refreshError}
+          </div>
+        )}
 
         <div class="home-metric-grid mb-4">
           <div class="card flex items-center justify-between">
@@ -135,7 +145,7 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
                 <button
                   key={product.id}
                   class="card card-clickable flex items-center justify-between"
-                  onClick={() => onNavigate('products')}
+                  onClick={() => onNavigate('products', product.id)}
                   type="button"
                 >
                   <div>

@@ -117,12 +117,20 @@ button.card { font: inherit; color: inherit; }
 .sales-search-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
 .product-search-actions { grid-template-columns: 1fr; }
 .sales-filter-pills { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 16px; -webkit-overflow-scrolling: touch; }
-.filter-pill { min-height: 36px; padding: 6px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: .85rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all .16s ease; }
+.filter-pill { min-height: 36px; padding: 6px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: .85rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background-color .16s ease, border-color .16s ease, color .16s ease; }
 .filter-pill:hover { background: var(--surface-subtle); color: var(--ink); }
 .filter-pill.selected { border-color: var(--blue); background: var(--blue-soft); color: var(--blue-dark); font-weight: 700; }
 .sales-filter { max-width: 320px; }
 .lid-search-form { display: grid; gap: 10px; }
 .lid-search-field { min-width: 0; margin-bottom: 0; }
+
+.password-input-wrapper { position: relative; width: 100%; display: flex; align-items: center; }
+.password-input-wrapper .form-input { padding-right: 52px; }
+.password-toggle-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--muted); display: grid; place-items: center; border-radius: 8px; cursor: pointer; }
+.password-toggle-btn:hover { color: var(--ink); background: var(--surface-subtle); }
+.password-toggle-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+
+.dashboard-refresh-message { padding: 10px 14px; border-radius: var(--radius-sm); background: var(--surface-subtle); border: 1px solid var(--line-strong); color: var(--muted); font-size: .88rem; font-weight: 500; }
 
 .payment-methods { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .payment-pill { min-height: 48px; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); font-weight: 600; cursor: pointer; }
@@ -133,6 +141,12 @@ button.card { font: inherit; color: inherit; }
 .status-chip-out-of-stock { color: var(--red); background: var(--red-soft); }
 .status-chip-success { color: var(--green); background: var(--green-soft); }
 .status-chip-warning { color: var(--amber); background: var(--amber-soft); }
+.status-chip-selected { color: var(--blue-dark); background: var(--blue-soft); border: 1px solid rgba(20, 104, 232, 0.25); }
+.status-chip-highlighted { color: var(--muted); background: var(--surface-subtle); border: 1px solid var(--line-strong); font-weight: 600; }
+
+.product-card-selected { border-color: var(--blue) !important; background-color: var(--blue-soft) !important; }
+.product-list-row-selected { border-color: var(--line-strong) !important; background-color: var(--surface-subtle) !important; }
+
 .summary-value { font-size: clamp(1.25rem, 4.2vw, 1.65rem); font-weight: 700; line-height: 1.2; letter-spacing: -.02em; min-height: 1.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .summary-label { margin-top: 4px; color: var(--muted); font-size: .82rem; min-height: 1.2rem; line-height: 1.25; overflow-wrap: break-word; }
 .home-alerts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); min-height: 84px; }

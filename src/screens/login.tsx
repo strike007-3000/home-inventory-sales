@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { EyeIcon, EyeOffIcon } from '../icons';
 
 interface LoginScreenProps {
   onLogin: () => void;
@@ -6,6 +7,7 @@ interface LoginScreenProps {
 
 export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -65,16 +67,27 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           <form onSubmit={handleSubmit}>
             <div class="form-group">
               <label class="form-label" for="password">Password</label>
-              <input
-                id="password"
-                type="password"
-                class="form-input"
-                value={password}
-                onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
-                placeholder="Enter password"
-                autocomplete="current-password"
-                autoFocus
-              />
+              <div class="password-input-wrapper">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  class="form-input"
+                  value={password}
+                  onInput={(e) => setPassword((e.target as HTMLInputElement).value)}
+                  placeholder="Enter password"
+                  autocomplete="current-password"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  class="password-toggle-btn"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                </button>
+              </div>
             </div>
 
             {error && (

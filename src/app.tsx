@@ -177,11 +177,17 @@ function ProductCard({
   };
 
   const variantDetails = [product.colour, product.size].filter(Boolean).join(' · ');
+  const isSelected = quantityInDraft > 0;
 
   return (
-    <div class="card product-card">
+    <div class={`card product-card ${isSelected ? 'product-card-selected' : ''}`}>
       <div class="card-header">
         <div>
+          {isSelected && (
+            <div class="mb-1">
+              <span class="status-chip status-chip-selected">Selected</span>
+            </div>
+          )}
           <h3 class="card-title">{product.name}</h3>
           {variantDetails && <div class="text-sm font-semibold text-ink-light mt-1">{variantDetails}</div>}
           {product.sku && <div class="card-subtitle code">{product.sku}</div>}
@@ -284,10 +290,6 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
     }
   };
 
-  const statusLabel = (sale: SaleSummaryDTO) => sale.status === 'cancelled'
-    ? 'Cancelled'
-    : sale.paymentStatus === 'partial' ? 'Partially paid'
-      : sale.paymentStatus === 'unpaid' ? 'Unpaid' : 'Paid';
 
   return (
     <div class="screen">
@@ -344,9 +346,23 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
                 <div class="flex justify-between items-start">
                   <div>
                     <div class="font-semibold">{sale.customerName || 'Walk-in customer'}</div>
-                    <div class="text-sm text-ink-light">{sale.saleNumber} · {new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</div>
-                    <div class="text-sm mt-2">{statusLabel(sale)}{sale.balancePaise > 0 && sale.status !== 'cancelled' ? ` · ${formatInr(sale.balancePaise)} due` : ''}</div>
+                    <div class="text-sm mt-1">
+                      {sale.status === 'cancelled' ? (
+                        <span class="status-chip status-chip-out-of-stock">Cancelled</span>
+                      ) : sale.paymentStatus === 'paid' ? (
+                        <span class="status-chip status-chip-success">Paid</span>
+                      ) : sale.paymentStatus === 'partial' ? (
+                        <span class="status-chip status-chip-warning">Partially paid</span>
+                      ) : (
+                        <span class="status-chip status-chip-warning">Unpaid</span>
+                      )}
+                      {sale.balancePaise > 0 && sale.status !== 'cancelled' && (
+                        <span class="text-ink-light ml-2">({formatInr(sale.balancePaise)} due)</span>
+                      )}
+                    </div>
+                    <div class="text-sm text-ink-light mt-1">{sale.saleNumber} · {new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</div>
                   </div>
+
                   <div class="font-semibold">{formatInr(sale.totalPaise)}</div>
                 </div>
               </button>
@@ -674,7 +690,7 @@ function ReviewSaleScreen({
                 <div class="font-semibold">{formatInr(lineTotal)}</div>
               </div>
               <div class="form-group mt-3">
-                <label class="form-label" for={`price-${product.id}`}>Price to multiply by QTY (₹)</label>
+                <label class="form-label" for={`price-${product.id}`}>Sale price per unit (₹)</label>
                 <input id={`price-${product.id}`} type="number" class="form-input"
                   min={0} step="0.01" inputMode="decimal" value={unitPricePaise / 100}
                   onInput={(event) => onSaleDraftChange(setSaleLineUnitPrice(saleDraft, product.id,
@@ -1754,25 +1770,13 @@ function CancelSaleConfirmScreen({
 }
 
 // ============================================================================
-// Products Screen
-// ============================================================================
-
-interface ProductsScreenProps {
-  onNavigate: (route: Route) => void;
-  onProductsChanged: () => Promise<void>;
-}
-
-function ProductsScreen({ onNavigate, onProductsChanged }: ProductsScreenProps) {
-  return <ProductList onNavigate={onNavigate} onProductsChanged={onProductsChanged} />;
-}
-
-// ============================================================================
 // Main App Component
 // ============================================================================
 
 export function App() {
   const [state, setState] = useState<InventoryState>(createEmptyInventoryState);
   const [route, setRoute] = useState<Route>('home');
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [lastCompletedSaleId, setLastCompletedSaleId] = useState<number>(0);
   const [activeSaleIdempotencyKey, setActiveSaleIdempotencyKey] = useState<string>(() => crypto.randomUUID());
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
@@ -1810,9 +1814,14 @@ export function App() {
     return () => window.removeEventListener('api:signed-out', handler);
   }, []);
 
-  const handleNavigate = useCallback((newRoute: Route) => {
-    setRoute(newRoute);
-    window.scrollTo(0, 0);
+  const handleNavigate = useCallback((newRoute: Route | 'products', productId?: number) => {
+    setRoute(newRoute as Route);
+    if (newRoute === 'products' && productId !== undefined) {
+      setSelectedProductId(productId);
+    } else {
+      setSelectedProductId(null);
+      window.scrollTo(0, 0);
+    }
   }, []);
 
   const handleLogout = useCallback(async () => {
@@ -1879,7 +1888,7 @@ export function App() {
       case 'cancel-sale-confirm':
         return <CancelSaleConfirmScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
       case 'products':
-        return <ProductsScreen onNavigate={handleNavigate} onProductsChanged={refreshProducts} />;
+        return <ProductList selectedProductId={selectedProductId} onNavigate={handleNavigate} onProductsChanged={refreshProducts} />;
       case 'lids':
         return <LidLookup />;
       default:
@@ -1887,7 +1896,7 @@ export function App() {
     }
   };
 
-  // Determine if we should show the nav (hide on some screens)
+// Determine if we should show the nav (hide on some screens)
   const showNav = !['sale-completed', 'view-sale', 'cancel-sale-confirm'].includes(route);
 
   // Auth gate

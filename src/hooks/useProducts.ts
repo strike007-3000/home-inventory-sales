@@ -63,7 +63,7 @@ export function useLocations() {
 /**
  * Hook to fetch products from the API
  */
-export function useProducts(activeFilter?: 'active' | 'inactive' | 'all') {
+export function useProducts(activeFilter?: 'active' | 'inactive' | 'all', limit?: number) {
   const [products, setProducts] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -74,9 +74,11 @@ export function useProducts(activeFilter?: 'active' | 'inactive' | 'all') {
     setError(null);
 
     try {
-      const url = activeFilter
-        ? `/products?active=${activeFilter}`
-        : '/products';
+      const params = new URLSearchParams();
+      if (activeFilter) params.set('active', activeFilter);
+      if (limit !== undefined) params.set('limit', String(limit));
+      const queryString = params.toString();
+      const url = queryString ? `/products?${queryString}` : '/products';
 
       const data = await apiGetJson<ProductsResponse>(url);
       setProducts(data.items);
@@ -94,7 +96,7 @@ export function useProducts(activeFilter?: 'active' | 'inactive' | 'all') {
 
   useEffect(() => {
     fetchProducts();
-  }, [activeFilter]);
+  }, [activeFilter, limit]);
 
   return { products, total, loading, error, refetch: fetchProducts };
 }
