@@ -8,7 +8,7 @@ Use Products → **Needs setup** to list the same active products counted by the
 
 ## Dependency updates
 
-Dependabot checks npm dependencies every 15 days using `.github/dependabot.yml`. Vulnerability alerts and automatic security-update pull requests remain enabled in the repository security settings.
+Dependabot checks npm dependencies twice monthly, on the 1st and 16th, using `.github/dependabot.yml`. Vulnerability alerts and automatic security-update pull requests remain enabled in the repository security settings.
 
 ## Deployment resources
 
