@@ -1038,6 +1038,11 @@ export function deriveSetStock(quantity: number, unitsPerSet: number): Result<nu
   return Ok(quantity / unitsPerSet);
 }
 
+export function needsUnitsPerSetConfiguration(product: Product): boolean {
+  return product.active && !product.unitsPerSet &&
+    (product.quantity > 0 || (product.setStockQuantity ?? 0) > 0);
+}
+
 /**
  * Compare the legacy valuation based on entered Stock/set with valuation derived
  * from canonical individual QTY and the product packaging size.
@@ -1089,7 +1094,7 @@ export function getInventoryValuationComparison(
         quantityDerived[key] = nextDerived;
       }
     }
-    if (!unitsPerSet && (product.quantity > 0 || setStock > 0)) unconfiguredCount += 1;
+    if (needsUnitsPerSetConfiguration(product)) unconfiguredCount += 1;
   }
 
   return Ok({ legacySetBased, quantityDerived, unconfiguredCount });

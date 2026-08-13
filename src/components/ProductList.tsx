@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { useProducts, useCreateProduct, useUpdateProduct, useToggleProduct, useLocations, type ProductFormData } from '../hooks/useProducts';
-import { formatInr } from '../domain';
+import { formatInr, needsUnitsPerSetConfiguration } from '../domain';
 import { ProductForm } from './ProductForm';
 import { useStockChange } from '../hooks/useStock';
 import type { Product } from '../domain';
@@ -137,14 +137,14 @@ function StockChangeForm({ product, onCancel, onSaved, onConflict }: StockChange
 }
 
 interface ProductListProps {
-  initialActiveFilter?: 'active' | 'inactive' | 'all' | 'personal';
+  initialActiveFilter?: 'active' | 'inactive' | 'all' | 'personal' | 'setup';
   selectedProductId?: number | null;
   onNavigate?: (route: any) => void;
   onProductsChanged?: () => Promise<void>;
 }
 
 export function ProductList({ initialActiveFilter = 'active', selectedProductId, onNavigate, onProductsChanged }: ProductListProps) {
-  const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all' | 'personal'>(initialActiveFilter);
+  const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all' | 'personal' | 'setup'>(initialActiveFilter);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingProduct, setEditingProduct] = useState<number | null>(null);
   const [creatingProduct, setCreatingProduct] = useState(false);
@@ -220,7 +220,8 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
     const matchesFilter = activeFilter === 'all' ||
       (activeFilter === 'active' && product.active) ||
       (activeFilter === 'inactive' && !product.active) ||
-      (activeFilter === 'personal' && product.personalUse);
+      (activeFilter === 'personal' && product.personalUse) ||
+      (activeFilter === 'setup' && needsUnitsPerSetConfiguration(product));
 
     return matchesSearch && matchesFilter;
   });
@@ -263,6 +264,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
 
   const activeCount = products.filter(p => p.active).length;
   const inactiveCount = products.filter(p => !p.active).length;
+  const setupCount = products.filter(needsUnitsPerSetConfiguration).length;
   const productBeingEdited = products.find((product) => product.id === editingProduct);
   const productChangingStock = products.find((product) => product.id === changingStock);
   const editInitialData: ProductFormData | undefined = productBeingEdited ? {
@@ -334,6 +336,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
               { value: 'inactive', label: 'Inactive' },
               { value: 'all', label: 'All' },
               { value: 'personal', label: 'Personal' },
+              { value: 'setup', label: `Needs setup (${setupCount})` },
             ] as const
           ).map((item) => (
             <button
@@ -457,6 +460,9 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
                             <span class="status-chip status-chip-muted">
                               Inactive
                             </span>
+                          )}
+                          {needsUnitsPerSetConfiguration(product) && (
+                            <span class="status-chip status-chip-warning">Pieces/set needed</span>
                           )}
                         </div>
                     </div>
