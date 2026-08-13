@@ -20,6 +20,7 @@ import {
   getRestockLineQuantity,
   setRestockLineQuantity,
   calculateSaleSubtotal,
+  calculateProportionalLineTotal,
   searchProducts,
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABELS,
@@ -178,6 +179,34 @@ function ProductCard({
 
   const variantDetails = [product.colour, product.size].filter(Boolean).join(' · ');
   const isSelected = quantityInDraft > 0;
+  const unitsPerSet = isSaleQuantity ? product.unitsPerSet : null;
+  const piecePrice = unitsPerSet ? calculateProportionalLineTotal(product.pricePaise, 1, unitsPerSet) : null;
+  const fullSets = unitsPerSet ? Math.floor(quantityInDraft / unitsPerSet) : 0;
+  const loosePieces = unitsPerSet ? quantityInDraft % unitsPerSet : quantityInDraft;
+
+  const quantityControl = (label: string, value: number, step: number, looseOnly = false) => {
+    const decreaseTo = looseOnly
+      ? quantityInDraft - 1
+      : quantityInDraft - step;
+    const increaseTo = quantityInDraft + step;
+    return (
+      <div>
+        <div class="quantity-label">{label}</div>
+        <div class="quantity-control">
+          <button class="quantity-btn" onClick={() => onQuantityChange(Math.max(0, decreaseTo))}
+            disabled={value === 0} type="button" aria-label={`Decrease ${product.name} ${label.toLowerCase()}`}>
+            <MinusIcon />
+          </button>
+          <span class="quantity-value">{value}</span>
+          <button class="quantity-btn" onClick={() => onQuantityChange(increaseTo)}
+            disabled={(isSaleQuantity && isOutOfStock) || (maxQuantity !== undefined && increaseTo > maxQuantity)}
+            type="button" aria-label={`Increase ${product.name} ${label.toLowerCase()}`}>
+            <PlusIcon />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div class={`card product-card ${isSelected ? 'product-card-selected' : ''}`}>
@@ -192,39 +221,40 @@ function ProductCard({
           {variantDetails && <div class="text-sm font-semibold text-ink-light mt-1">{variantDetails}</div>}
           {product.sku && <div class="card-subtitle code">{product.sku}</div>}
         </div>
-        <div class="card-price">{formatInr(product.pricePaise)}</div>
+        <div class="card-price">
+          <div>{formatInr(product.pricePaise)}{unitsPerSet ? ' / set' : ''}</div>
+          {piecePrice?.ok && <div class="card-subtitle">{formatInr(piecePrice.value)} / piece</div>}
+        </div>
       </div>
 
       <div class="text-sm text-ink-light mb-2">
         {isOutOfStock ? (
           <span class="status-chip status-chip-out-of-stock">Out of stock</span>
         ) : (
-          `${product.quantity} in stock`
+          unitsPerSet
+            ? `${product.quantity} pieces · ${product.quantity / unitsPerSet} sets`
+            : `${product.quantity} in stock`
         )}
       </div>
 
-      <div class="quantity-label">{quantityLabel}</div>
-      <div class="quantity-control">
-        <button
-          class="quantity-btn"
-          onClick={handleDecrease}
-          disabled={quantityInDraft === 0}
-          type="button"
-          aria-label={`Decrease ${product.name} quantity`}
-        >
-          <MinusIcon />
-        </button>
-        <span class="quantity-value">{quantityInDraft}</span>
-        <button
-          class="quantity-btn"
-          onClick={handleIncrease}
-          disabled={(isSaleQuantity && isOutOfStock) || isAtMax}
-          type="button"
-          aria-label={`Increase ${product.name} quantity`}
-        >
-          <PlusIcon />
-        </button>
-      </div>
+      {unitsPerSet ? (
+        <div class="sale-quantity-options">
+          {quantityControl('Sets', fullSets, unitsPerSet)}
+          {quantityControl('Loose pieces', loosePieces, 1, true)}
+        </div>
+      ) : (
+        <>
+          <div class="quantity-label">{quantityLabel}</div>
+          <div class="quantity-control">
+            <button class="quantity-btn" onClick={handleDecrease} disabled={quantityInDraft === 0}
+              type="button" aria-label={`Decrease ${product.name} quantity`}><MinusIcon /></button>
+            <span class="quantity-value">{quantityInDraft}</span>
+            <button class="quantity-btn" onClick={handleIncrease}
+              disabled={(isSaleQuantity && isOutOfStock) || isAtMax}
+              type="button" aria-label={`Increase ${product.name} quantity`}><PlusIcon /></button>
+          </div>
+        </>
+      )}
 
       {isAtMax && !isOutOfStock && (
         <div class="quantity-hint">Only {maxQuantity} available</div>
@@ -549,15 +579,22 @@ function ReviewSaleScreen({
     .map((line) => {
       const product = products.get(line.productId);
       if (!product) return null;
+      const pricePaise = line.unitPricePaise ?? product.pricePaise;
+      const proportional = product.unitsPerSet
+        ? calculateProportionalLineTotal(pricePaise, line.quantity, product.unitsPerSet)
+        : { ok: true as const, value: pricePaise * line.quantity };
+      if (!proportional.ok) return null;
       return {
         product,
         quantity: line.quantity,
-        unitPricePaise: line.unitPricePaise ?? product.pricePaise,
-        setStockAfter: line.setStockAfter ?? product.setStockQuantity ?? 0,
-        lineTotal: (line.unitPricePaise ?? product.pricePaise) * line.quantity,
+        pricePaise,
+        setStockAfter: product.unitsPerSet
+          ? (product.quantity - line.quantity) / product.unitsPerSet
+          : line.setStockAfter ?? product.setStockQuantity ?? 0,
+        lineTotal: proportional.value,
       };
     })
-    .filter((item): item is { product: Product; quantity: number; unitPricePaise: number; setStockAfter: number; lineTotal: number } => item !== null);
+    .filter((item): item is { product: Product; quantity: number; pricePaise: number; setStockAfter: number; lineTotal: number } => item !== null);
 
   const handleDiscountChange = (e: Event) => {
     const value = (e.target as HTMLInputElement).value;
@@ -585,9 +622,9 @@ function ReviewSaleScreen({
         idempotencyKey: saleIdempotencyKey,
         saleDate,
         customerName: customerName.trim() || null,
-        lines: lineItems.map(({ product, quantity, unitPricePaise, setStockAfter }) => ({
-          productId: product.id, quantity, unitPricePaise, setStockAfter,
-        })),
+        lines: lineItems.map(({ product, quantity, pricePaise, setStockAfter }) => product.unitsPerSet
+          ? { productId: product.id, quantity, setPricePaise: pricePaise }
+          : { productId: product.id, quantity, unitPricePaise: pricePaise, setStockAfter }),
         discountPaise: saleDraft.discountPaise,
         paymentMethod: saleDraft.paymentMethod,
         receivedPaise: effectiveReceivedPaise,
@@ -676,7 +713,7 @@ function ReviewSaleScreen({
         </div>
 
         {/* Line items */}
-        {lineItems.map(({ product, quantity, unitPricePaise, setStockAfter, lineTotal }) => {
+        {lineItems.map(({ product, quantity, pricePaise, setStockAfter, lineTotal }) => {
           const variantDetails = [product.colour, product.size].filter(Boolean).join(' · ');
           return (
             <div key={product.id} class="card">
@@ -685,26 +722,40 @@ function ReviewSaleScreen({
                   <div class="font-semibold">{product.name}</div>
                   {variantDetails && <div class="text-sm font-semibold text-ink-light mt-1">{variantDetails}</div>}
                   {product.sku && <div class="card-subtitle code">{product.sku}</div>}
-                  <div class="text-sm text-ink-light mt-1">Qty: {quantity}</div>
+                  <div class="text-sm text-ink-light mt-1">
+                    {product.unitsPerSet
+                      ? `${quantity} pieces · ${Math.floor(quantity / product.unitsPerSet)} ${Math.floor(quantity / product.unitsPerSet) === 1 ? 'set' : 'sets'} + ${quantity % product.unitsPerSet} loose`
+                      : `Qty: ${quantity}`}
+                  </div>
                 </div>
                 <div class="font-semibold">{formatInr(lineTotal)}</div>
               </div>
               <div class="form-group mt-3">
-                <label class="form-label" for={`price-${product.id}`}>Sale price per unit (₹)</label>
+                <label class="form-label" for={`price-${product.id}`}>
+                  Sale price per {product.unitsPerSet ? 'set' : 'unit'} (₹)
+                </label>
                 <input id={`price-${product.id}`} type="number" class="form-input"
-                  min={0} step="0.01" inputMode="decimal" value={unitPricePaise / 100}
+                  min={0} step="0.01" inputMode="decimal" value={pricePaise / 100}
                   onInput={(event) => onSaleDraftChange(setSaleLineUnitPrice(saleDraft, product.id,
                     Math.max(0, Math.round((parseFloat((event.target as HTMLInputElement).value) || 0) * 100))))} />
-                <div class="text-sm text-ink-light mt-2">Catalogue SRP is per Stock/set. Change this price when selling individual pieces.</div>
+                <div class="text-sm text-ink-light mt-2">
+                  {product.unitsPerSet
+                    ? `${product.unitsPerSet} pieces per set · proportional piece price is calculated automatically.`
+                    : 'Configure Pieces in one set in Product details to calculate piece prices automatically.'}
+                </div>
               </div>
-              <div class="form-group">
-                <label class="form-label" for={`set-stock-${product.id}`}>Stock/set count after sale</label>
-                <input id={`set-stock-${product.id}`} type="number" class="form-input"
-                  min={0} step="0.01" inputMode="decimal" value={setStockAfter}
-                  onInput={(event) => onSaleDraftChange(setSaleLineSetStock(saleDraft, product.id,
-                    Math.max(0, parseFloat((event.target as HTMLInputElement).value) || 0)))} />
-                <div class="text-sm text-ink-light mt-2">Before sale: {product.setStockQuantity ?? 0}</div>
-              </div>
+              {product.unitsPerSet ? (
+                <div class="stock-delta">After sale: {product.quantity - quantity} pieces · {setStockAfter} sets</div>
+              ) : (
+                <div class="form-group">
+                  <label class="form-label" for={`set-stock-${product.id}`}>Stock/set count after sale</label>
+                  <input id={`set-stock-${product.id}`} type="number" class="form-input"
+                    min={0} step="0.01" inputMode="decimal" value={setStockAfter}
+                    onInput={(event) => onSaleDraftChange(setSaleLineSetStock(saleDraft, product.id,
+                      Math.max(0, parseFloat((event.target as HTMLInputElement).value) || 0)))} />
+                  <div class="text-sm text-ink-light mt-2">Before sale: {product.setStockQuantity ?? 0}</div>
+                </div>
+              )}
             </div>
           );
         })}

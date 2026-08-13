@@ -96,6 +96,7 @@ button.card { font: inherit; color: inherit; }
 
 .quantity-label { color: var(--muted); font-size: .82rem; font-weight: 600; }
 .quantity-control { display: grid; grid-template-columns: 48px minmax(48px, 64px) 48px; align-items: center; gap: 2px; width: max-content; margin-top: 7px; border: 1px solid var(--line-strong); border-radius: 10px; overflow: hidden; }
+.sale-quantity-options { display: flex; flex-wrap: wrap; gap: 12px; }
 .quantity-btn { width: 48px; height: 48px; min-width: 48px; min-height: 48px; padding: 0; border: 0; background: var(--surface-subtle); color: var(--blue); display: grid; place-items: center; cursor: pointer; }
 .quantity-btn:hover:not(:disabled) { background: var(--blue-soft); }
 .quantity-btn:disabled { color: #aeb4bc; cursor: not-allowed; }
@@ -353,6 +354,7 @@ button.card { font: inherit; color: inherit; }
   .product-card > .text-sm { grid-column: 2; grid-row: 1 / 3; margin: 0; }
   .product-card .quantity-label { grid-column: 3; grid-row: 1; align-self: end; }
   .product-card .quantity-control { grid-column: 3; grid-row: 2; align-self: start; }
+  .product-card .sale-quantity-options { grid-column: 3; grid-row: 1 / 3; align-self: center; }
   .product-card .quantity-hint { grid-column: 3; }
   .product-list-row { grid-template-columns: minmax(220px, 1fr) minmax(300px, .9fr); align-items: center; column-gap: 24px; padding: 18px 20px; }
   .product-identity { grid-column: 1; grid-row: 1 / 3; align-self: start; }

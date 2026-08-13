@@ -3,7 +3,7 @@ import type { DashboardDTO } from '../../shared/contracts';
 import { apiGetJson } from '../api';
 import {
   formatInr,
-  getInventoryValuation,
+  getInventoryValuationComparison,
   getLowStockProducts,
   getOutOfStockProducts,
   getTodaysSalesTotal,
@@ -30,7 +30,10 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
   const lowStock = useMemo(() => getLowStockProducts(state), [state]);
   const outOfStock = useMemo(() => getOutOfStockProducts(state), [state]);
   const fallbackTotalSales = useMemo(() => getTotalSalesSummary(state), [state.sales]);
-  const inventoryValuation = useMemo(() => getInventoryValuation(state), [state.products]);
+  const valuationComparison = useMemo(() => getInventoryValuationComparison(state), [state.products]);
+  const emptyValuation = { cpPaise: 0, srpPaise: 0, mrpPaise: 0 };
+  const legacyValuation = valuationComparison.ok ? valuationComparison.value.legacySetBased : emptyValuation;
+  const quantityValuation = valuationComparison.ok ? valuationComparison.value.quantityDerived : emptyValuation;
 
   const localToday = useMemo(() => {
     const now = new Date();
@@ -114,28 +117,58 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
 
           <div class="card flex items-center justify-between">
             <div class="min-w-0 flex-1 mr-2">
-              <div class="summary-value">{inventoryValuation.cpPaise > 0 ? formatInr(inventoryValuation.cpPaise) : '₹0'}</div>
-              <div class="summary-label">Stock CP Value</div>
+              <div class="summary-value">{legacyValuation.cpPaise > 0 ? formatInr(legacyValuation.cpPaise) : '₹0'}</div>
+              <div class="summary-label">Stock/set CP Value</div>
             </div>
             <div class="summary-icon-badge"><StockIcon /></div>
           </div>
 
           <div class="card flex items-center justify-between">
             <div class="min-w-0 flex-1 mr-2">
-              <div class="summary-value">{inventoryValuation.srpPaise > 0 ? formatInr(inventoryValuation.srpPaise) : '₹0'}</div>
-              <div class="summary-label">Stock SRP Value</div>
+              <div class="summary-value">{legacyValuation.srpPaise > 0 ? formatInr(legacyValuation.srpPaise) : '₹0'}</div>
+              <div class="summary-label">Stock/set SRP Value</div>
             </div>
             <div class="summary-icon-badge green"><SellIcon /></div>
           </div>
 
           <div class="card flex items-center justify-between">
             <div class="min-w-0 flex-1 mr-2">
-              <div class="summary-value">{inventoryValuation.mrpPaise > 0 ? formatInr(inventoryValuation.mrpPaise) : '₹0'}</div>
-              <div class="summary-label">Stock MRP Value</div>
+              <div class="summary-value">{legacyValuation.mrpPaise > 0 ? formatInr(legacyValuation.mrpPaise) : '₹0'}</div>
+              <div class="summary-label">Stock/set MRP Value</div>
             </div>
             <div class="summary-icon-badge purple"><ClipboardIcon /></div>
           </div>
+
+          <div class="card flex items-center justify-between">
+            <div class="min-w-0 flex-1 mr-2">
+              <div class="summary-value">{quantityValuation.cpPaise > 0 ? formatInr(quantityValuation.cpPaise) : '₹0'}</div>
+              <div class="summary-label">Individual QTY CP Value</div>
+            </div>
+            <div class="summary-icon-badge"><StockIcon /></div>
+          </div>
+
+          <div class="card flex items-center justify-between">
+            <div class="min-w-0 flex-1 mr-2">
+              <div class="summary-value">{quantityValuation.srpPaise > 0 ? formatInr(quantityValuation.srpPaise) : '₹0'}</div>
+              <div class="summary-label">Individual QTY SRP Value</div>
+            </div>
+            <div class="summary-icon-badge green"><SellIcon /></div>
+          </div>
+
+          <div class="card flex items-center justify-between">
+            <div class="min-w-0 flex-1 mr-2">
+              <div class="summary-value">{quantityValuation.mrpPaise > 0 ? formatInr(quantityValuation.mrpPaise) : '₹0'}</div>
+              <div class="summary-label">Individual QTY MRP Value</div>
+            </div>
+            <div class="summary-icon-badge"><ClipboardIcon /></div>
+          </div>
         </div>
+
+        {valuationComparison.ok && valuationComparison.value.unconfiguredCount > 0 && (
+          <div class="dashboard-refresh-message mb-4" role="status">
+            Individual QTY values exclude {valuationComparison.value.unconfiguredCount} product{valuationComparison.value.unconfiguredCount === 1 ? '' : 's'} until Pieces in one set is configured.
+          </div>
+        )}
 
         <section class="mb-4">
           <h2 class="text-lg font-semibold mb-3">Needs attention</h2>

@@ -37,6 +37,16 @@ async function addProduct(quantity = 8, setStock = 2): Promise<number> {
   return Number(result.meta.last_row_id);
 }
 
+async function addConfiguredBottle(quantity = 14): Promise<number> {
+  const now = new Date().toISOString();
+  const result = await env.DB.prepare(
+    `INSERT INTO products (name, selling_price_minor, mrp_minor, cost_price_minor,
+      stock_quantity, set_stock_quantity, units_per_set, low_stock_level, active, version, created_at, updated_at)
+     VALUES ('310 ML Bottles', 66000, 88000, 50160, ?, 3.5, 4, 1, 1, 1, ?, ?)`,
+  ).bind(quantity, now, now).run();
+  return Number(result.meta.last_row_id);
+}
+
 beforeEach(async () => {
   const login = await exports.default.fetch(request('/api/login', {
     method: 'POST',
@@ -50,6 +60,36 @@ beforeEach(async () => {
 });
 
 describe('Sale API', () => {
+  it('prices configured products proportionally and derives Stock/set from QTY', async () => {
+    const productId = await addConfiguredBottle();
+    const onePiece = await api('/api/sales', 'POST', {
+      idempotencyKey: 'configured-one-piece', saleDate: '2026-07-15',
+      lines: [{ productId, quantity: 1, setPricePaise: 66000 }],
+      discountPaise: 0, paymentMethod: 'cash', receivedPaise: 16500,
+    });
+    expect(onePiece.status).toBe(201);
+    expect(await onePiece.json<any>()).toMatchObject({
+      subtotalPaise: 16500,
+      lines: [{ quantity: 1, lineTotalPaise: 16500, unitsPerSet: 4, setPricePaise: 66000, setStockAfter: 3.25 }],
+    });
+
+    const oneSet = await api('/api/sales', 'POST', {
+      idempotencyKey: 'configured-one-set', saleDate: '2026-07-15',
+      lines: [{ productId, quantity: 4, setPricePaise: 66000 }],
+      discountPaise: 0, paymentMethod: 'upi', receivedPaise: 66000,
+    });
+    expect(oneSet.status).toBe(201);
+    const oneSetSale = await oneSet.json<any>();
+    expect(oneSetSale).toMatchObject({ subtotalPaise: 66000, lines: [{ lineTotalPaise: 66000 }] });
+    expect(await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?')
+      .bind(productId).first<any>()).toMatchObject({ stock_quantity: 9, set_stock_quantity: 2.25 });
+
+    const cancelled = await api(`/api/sales/${oneSetSale.id}/cancel`, 'POST', { reason: 'Configured reversal' });
+    expect(cancelled.status).toBe(200);
+    expect(await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?')
+      .bind(productId).first<any>()).toMatchObject({ stock_quantity: 13, set_stock_quantity: 3.25 });
+  });
+
   it('completes a sale with an edited price and seller-entered set stock', async () => {
     const productId = await addProduct();
     const response = await api('/api/sales', 'POST', {

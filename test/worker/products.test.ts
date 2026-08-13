@@ -2511,6 +2511,7 @@ describe('Product API', () => {
         consultantPricePaise: 64600,
         quantity: 3,
         setStockQuantity: 1.5,
+        unitsPerSet: 2,
         lowStockLevel: 1,
         locationId: location!.id,
         personalUse: true,
@@ -2528,10 +2529,59 @@ describe('Product API', () => {
         consultantPricePaise: 64600,
         quantity: 3,
         setStockQuantity: 1.5,
+        unitsPerSet: 2,
         locationId: location!.id,
         locationName: 'Test Shelf A',
         personalUse: true,
       });
+    });
+
+    it('allows pieces per set to be configured, changed, and cleared', async () => {
+      const createdResponse = await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Four Bottle Set',
+        pricePaise: 66000,
+        quantity: 14,
+        setStockQuantity: 3.5,
+        unitsPerSet: 4,
+        lowStockLevel: 0,
+        active: true,
+      });
+      expect(createdResponse.status).toBe(201);
+      const created = await createdResponse.json();
+      expect(created.unitsPerSet).toBe(4);
+
+      const changedResponse = await apiPutProducts(
+        session,
+        csrf,
+        `/api/products/${created.id}?version=${created.version}`,
+        { ...created, unitsPerSet: 6 },
+      );
+      expect(changedResponse.status).toBe(200);
+      const changed = await changedResponse.json();
+      expect(changed.unitsPerSet).toBe(6);
+
+      const clearedResponse = await apiPutProducts(
+        session,
+        csrf,
+        `/api/products/${changed.id}?version=${changed.version}`,
+        { ...changed, unitsPerSet: null },
+      );
+      expect(clearedResponse.status).toBe(200);
+      expect((await clearedResponse.json()).unitsPerSet).toBeNull();
+    });
+
+    it.each([0, -1, 1.5])('rejects invalid pieces-per-set value %s', async (unitsPerSet) => {
+      const response = await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Invalid Set Size',
+        pricePaise: 66000,
+        quantity: 4,
+        setStockQuantity: 1,
+        unitsPerSet,
+        lowStockLevel: 0,
+        active: true,
+      });
+      expect(response.status).toBe(400);
+      expect((await response.json<{ error: string }>()).error).toContain('Pieces per set');
     });
 
     it('searches by colour, size, and normalized location', async () => {

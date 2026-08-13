@@ -15,6 +15,7 @@ export interface Product {
   readonly consultantPricePaise?: number | null;
   readonly quantity: number;
   readonly setStockQuantity?: number;
+  readonly unitsPerSet?: number | null;
   readonly lowStockLevel: number;
   readonly locationId?: number | null;
   readonly locationName?: string | null;
@@ -62,6 +63,8 @@ export interface SaleLineRecord {
   readonly lineTotalPaise: number;
   readonly setStockBefore?: number;
   readonly setStockAfter?: number;
+  readonly unitsPerSet?: number | null;
+  readonly setPricePaise?: number | null;
 }
 
 export interface SaleRecord {
@@ -313,8 +316,17 @@ export function calculateSaleSubtotal(
     if (line.quantity > product.quantity) {
       return Err(`Only ${product.quantity} ${product.name} available, but ${line.quantity} requested`);
     }
-    const lineTotal = (line.unitPricePaise ?? product.pricePaise) * line.quantity;
-    subtotal += lineTotal;
+    const price = line.unitPricePaise ?? product.pricePaise;
+    if (product.unitsPerSet) {
+      const lineTotal = calculateProportionalLineTotal(price, line.quantity, product.unitsPerSet);
+      if (!lineTotal.ok) return lineTotal;
+      if (!Number.isSafeInteger(subtotal + lineTotal.value)) return Err('Sale total exceeds the safe integer range');
+      subtotal += lineTotal.value;
+    } else {
+      const lineTotal = price * line.quantity;
+      if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) return Err('Sale total exceeds the safe integer range');
+      subtotal += lineTotal;
+    }
   }
 
   return Ok(subtotal);
@@ -511,23 +523,34 @@ export function completeSale(
     const product = newProducts.get(line.productId);
     if (!product) continue; // Already validated above
 
-    const unitPricePaise = line.unitPricePaise ?? product.pricePaise;
-    const lineTotal = unitPricePaise * line.quantity;
+    const setOrUnitPricePaise = line.unitPricePaise ?? product.pricePaise;
+    const proportional = product.unitsPerSet
+      ? calculateProportionalLineTotal(setOrUnitPricePaise, line.quantity, product.unitsPerSet)
+      : Ok(setOrUnitPricePaise * line.quantity);
+    if (!proportional.ok) return proportional;
+    const unitPricePaise = product.unitsPerSet
+      ? Math.floor((setOrUnitPricePaise + Math.floor(product.unitsPerSet / 2)) / product.unitsPerSet)
+      : setOrUnitPricePaise;
+    const setStockAfter = product.unitsPerSet
+      ? (product.quantity - line.quantity) / product.unitsPerSet
+      : line.setStockAfter ?? product.setStockQuantity ?? 0;
     lineRecords.push({
       productId: product.id,
       productName: product.name,
       quantity: line.quantity,
       unitPricePaise,
-      lineTotalPaise: lineTotal,
+      lineTotalPaise: proportional.value,
       setStockBefore: product.setStockQuantity ?? 0,
-      setStockAfter: line.setStockAfter ?? product.setStockQuantity ?? 0,
+      setStockAfter,
+      unitsPerSet: product.unitsPerSet ?? null,
+      setPricePaise: product.unitsPerSet ? setOrUnitPricePaise : null,
     });
 
     // Reduce stock
     newProducts.set(line.productId, {
       ...product,
       quantity: product.quantity - line.quantity,
-      setStockQuantity: line.setStockAfter ?? product.setStockQuantity ?? 0,
+      setStockQuantity: setStockAfter,
     });
   }
 
@@ -959,6 +982,114 @@ export function getInventoryValuation(state: InventoryState): {
   }
 
   return { cpPaise, srpPaise, mrpPaise, totalUnits };
+}
+
+export interface InventoryValuationTotals {
+  readonly cpPaise: number;
+  readonly srpPaise: number;
+  readonly mrpPaise: number;
+}
+
+export interface InventoryValuationComparison {
+  readonly legacySetBased: InventoryValuationTotals;
+  readonly quantityDerived: InventoryValuationTotals;
+  readonly unconfiguredCount: number;
+}
+
+/**
+ * Price an individual quantity from a price stored per set.
+ * Rounds half up once at the line total, avoiding accumulated per-unit rounding.
+ */
+export function calculateProportionalLineTotal(
+  setPricePaise: number,
+  quantity: number,
+  unitsPerSet: number,
+): Result<number> {
+  if (!Number.isSafeInteger(setPricePaise) || setPricePaise < 0) {
+    return Err('Set price must be a non-negative safe integer');
+  }
+  if (!Number.isSafeInteger(quantity) || quantity < 0) {
+    return Err('Quantity must be a non-negative safe integer');
+  }
+  if (!Number.isSafeInteger(unitsPerSet) || unitsPerSet <= 0) {
+    return Err('Units per set must be a positive safe integer');
+  }
+
+  const numerator = BigInt(setPricePaise) * BigInt(quantity);
+  const denominator = BigInt(unitsPerSet);
+  const quotient = numerator / denominator;
+  const remainder = numerator % denominator;
+  const rounded = quotient + (remainder * 2n >= denominator ? 1n : 0n);
+
+  if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) {
+    return Err('Line total exceeds the safe integer range');
+  }
+  return Ok(Number(rounded));
+}
+
+/** Convert canonical individual stock into its equivalent set quantity. */
+export function deriveSetStock(quantity: number, unitsPerSet: number): Result<number> {
+  if (!Number.isSafeInteger(quantity) || quantity < 0) {
+    return Err('Quantity must be a non-negative safe integer');
+  }
+  if (!Number.isSafeInteger(unitsPerSet) || unitsPerSet <= 0) {
+    return Err('Units per set must be a positive safe integer');
+  }
+  return Ok(quantity / unitsPerSet);
+}
+
+/**
+ * Compare the legacy valuation based on entered Stock/set with valuation derived
+ * from canonical individual QTY and the product packaging size.
+ */
+export function getInventoryValuationComparison(
+  state: InventoryState,
+): Result<InventoryValuationComparison> {
+  const legacySetBased = { cpPaise: 0, srpPaise: 0, mrpPaise: 0 };
+  const quantityDerived = { cpPaise: 0, srpPaise: 0, mrpPaise: 0 };
+  let unconfiguredCount = 0;
+
+  for (const product of state.products.values()) {
+    if (!product.active || product.quantity <= 0) continue;
+
+    const unitsPerSet = product.unitsPerSet;
+    const setStock = product.setStockQuantity ?? (unitsPerSet ? product.quantity / unitsPerSet : product.quantity);
+    if (!Number.isFinite(setStock) || setStock < 0) {
+      return Err(`Invalid Stock/set for ${product.name}`);
+    }
+    const prices = {
+      cpPaise: product.consultantPricePaise ?? product.pricePaise,
+      srpPaise: product.pricePaise,
+      mrpPaise: product.mrpPaise ?? product.pricePaise,
+    } as const;
+
+    for (const key of ['cpPaise', 'srpPaise', 'mrpPaise'] as const) {
+      const price = prices[key];
+      if (!Number.isSafeInteger(price) || price < 0) {
+        return Err(`Invalid ${key} for ${product.name}`);
+      }
+      const legacyValue = Math.round(price * setStock);
+      if (!Number.isSafeInteger(legacyValue)) {
+        return Err(`Legacy valuation exceeds the safe integer range for ${product.name}`);
+      }
+      const nextLegacy = legacySetBased[key] + legacyValue;
+      if (!Number.isSafeInteger(nextLegacy)) {
+        return Err('Inventory valuation exceeds the safe integer range');
+      }
+      legacySetBased[key] = nextLegacy;
+
+      if (unitsPerSet) {
+        const derivedValue = calculateProportionalLineTotal(price, product.quantity, unitsPerSet);
+        if (!derivedValue.ok) return derivedValue;
+        const nextDerived = quantityDerived[key] + derivedValue.value;
+        if (!Number.isSafeInteger(nextDerived)) return Err('Inventory valuation exceeds the safe integer range');
+        quantityDerived[key] = nextDerived;
+      }
+    }
+    if (!unitsPerSet) unconfiguredCount += 1;
+  }
+
+  return Ok({ legacySetBased, quantityDerived, unconfiguredCount });
 }
 
 
