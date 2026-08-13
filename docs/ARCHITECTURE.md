@@ -28,7 +28,7 @@ Cloudflare D1 (binding: DB)
 
 ## Data model
 
-- `products` holds the catalogue and authoritative individual QTY.
+- `products` holds the catalogue, authoritative individual QTY, and optional integer `units_per_set` packaging metadata.
 - `locations` normalizes location labels but production location rows are not stored in Git.
 - `sales` and `sale_items` snapshot commercial details.
 - `sale_payments` is append-only and supports unpaid, partial, and later payments.
@@ -40,6 +40,9 @@ Cloudflare D1 (binding: DB)
 
 - Money crosses API boundaries as integer paise.
 - QTY is a non-negative integer; Stock/set count may be fractional.
+- Catalogue CP, SRP, and MRP are prices per set. For configured products, line totals use integer arithmetic and round half up once per line: `set price × individual QTY ÷ pieces per set`.
+- A configured sale decrements authoritative QTY and derives Stock/set after the sale. Sale items snapshot pieces per set, set price, and the authoritative line total so later product edits cannot rewrite history.
+- Products without Pieces in one set retain the legacy seller-confirmed Stock/set sale flow and are excluded from individual-QTY Dashboard valuations.
 - Mutations require authentication, approved origin, and CSRF token.
 - Sales use idempotency keys and guarded D1 batches to prevent duplicate or partial stock changes.
 - Product edits do not silently rewrite stock; stock-specific endpoints own stock changes.

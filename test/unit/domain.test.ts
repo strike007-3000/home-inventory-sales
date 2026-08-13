@@ -21,6 +21,9 @@ import {
   getTodaysSalesTotal,
   getTotalSalesSummary,
   getInventoryValuation,
+  getInventoryValuationComparison,
+  calculateProportionalLineTotal,
+  deriveSetStock,
   searchProducts,
   getTodayKolkata,
   validateQuantity,
@@ -759,6 +762,83 @@ describe('getInventoryValuation', () => {
     expect(valuation.srpPaise).toBeGreaterThanOrEqual(0);
     expect(valuation.mrpPaise).toBeGreaterThanOrEqual(0);
     expect(valuation.totalUnits).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('set pricing and QTY-derived valuation', () => {
+  const bottle: Product = {
+    id: 999,
+    sku: null,
+    name: '310 ML BOTTLES',
+    category: null,
+    pricePaise: 66000,
+    mrpPaise: 88000,
+    consultantPricePaise: 50160,
+    quantity: 14,
+    setStockQuantity: 3.5,
+    unitsPerSet: 4,
+    lowStockLevel: 0,
+    active: true,
+    version: 1,
+  };
+
+  it('prices one bottle and one set from a set price', () => {
+    expect(calculateProportionalLineTotal(66000, 1, 4)).toEqual({ ok: true, value: 16500 });
+    expect(calculateProportionalLineTotal(66000, 4, 4)).toEqual({ ok: true, value: 66000 });
+  });
+
+  it('rounds half up once at the proportional line total', () => {
+    expect(calculateProportionalLineTotal(1, 1, 2)).toEqual({ ok: true, value: 1 });
+    expect(calculateProportionalLineTotal(1, 3, 2)).toEqual({ ok: true, value: 2 });
+  });
+
+  it('derives fractional set stock from individual QTY', () => {
+    expect(deriveSetStock(14, 4)).toEqual({ ok: true, value: 3.5 });
+    expect(deriveSetStock(10, 4)).toEqual({ ok: true, value: 2.5 });
+  });
+
+  it('returns exact legacy and QTY-derived CP, SRP and MRP values', () => {
+    const state = { ...createInitialState(), products: new Map([[bottle.id, bottle]]) };
+    expect(getInventoryValuationComparison(state)).toEqual({
+      ok: true,
+      value: {
+        legacySetBased: { cpPaise: 175560, srpPaise: 231000, mrpPaise: 308000 },
+        quantityDerived: { cpPaise: 175560, srpPaise: 231000, mrpPaise: 308000 },
+        unconfiguredCount: 0,
+      },
+    });
+  });
+
+  it('reveals stale Stock/set without corrupting the QTY-derived valuation', () => {
+    const staleBottle = { ...bottle, quantity: 10, setStockQuantity: 3.5 };
+    const state = { ...createInitialState(), products: new Map([[staleBottle.id, staleBottle]]) };
+    expect(getInventoryValuationComparison(state)).toEqual({
+      ok: true,
+      value: {
+        legacySetBased: { cpPaise: 175560, srpPaise: 231000, mrpPaise: 308000 },
+        quantityDerived: { cpPaise: 125400, srpPaise: 165000, mrpPaise: 220000 },
+        unconfiguredCount: 0,
+      },
+    });
+  });
+
+  it('preserves legacy value and flags missing packaging when QTY is zero but Stock/set remains', () => {
+    const staleZeroQty = { ...bottle, quantity: 0, setStockQuantity: 2, unitsPerSet: null };
+    const state = { ...createInitialState(), products: new Map([[staleZeroQty.id, staleZeroQty]]) };
+    expect(getInventoryValuationComparison(state)).toEqual({
+      ok: true,
+      value: {
+        legacySetBased: { cpPaise: 100320, srpPaise: 132000, mrpPaise: 176000 },
+        quantityDerived: { cpPaise: 0, srpPaise: 0, mrpPaise: 0 },
+        unconfiguredCount: 1,
+      },
+    });
+  });
+
+  it('rejects invalid packaging and unsafe totals', () => {
+    expect(calculateProportionalLineTotal(66000, 1, 0).ok).toBe(false);
+    expect(calculateProportionalLineTotal(Number.MAX_SAFE_INTEGER, 2, 1).ok).toBe(false);
+    expect(deriveSetStock(1.5, 4).ok).toBe(false);
   });
 });
 

@@ -42,6 +42,7 @@ export function ProductForm({
     consultantPricePaise: initialData?.consultantPricePaise ?? null,
     quantity: initialData?.quantity ?? 0,
     setStockQuantity: initialData?.setStockQuantity ?? 0,
+    unitsPerSet: initialData?.unitsPerSet ?? null,
     lowStockLevel: initialData?.lowStockLevel ?? 5,
     locationId: initialData?.locationId ?? null,
     personalUse: initialData?.personalUse ?? false,
@@ -70,6 +71,10 @@ export function ProductForm({
 
     if (!Number.isFinite(formData.setStockQuantity) || formData.setStockQuantity < 0) {
       next.setStockQuantity = 'Stock cannot be negative';
+    }
+
+    if (formData.unitsPerSet !== null && (!Number.isSafeInteger(formData.unitsPerSet) || formData.unitsPerSet <= 0)) {
+      next.unitsPerSet = 'Pieces per set must be a positive whole number';
     }
 
     const lowStock = validateWholeNumber(formData.lowStockLevel, 'Low stock level');
@@ -202,6 +207,33 @@ export function ProductForm({
           {errors.setStockQuantity && <span class="text-error text-sm mt-1 block">{errors.setStockQuantity}</span>}
           {isEditing && <span class="form-hint block">Stock changes are recorded separately.</span>}
         </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="unitsPerSet">Pieces in one set (optional)</label>
+        <input
+          id="unitsPerSet"
+          type="number"
+          class={`form-input ${errors.unitsPerSet ? 'form-input-error' : ''}`}
+          value={formData.unitsPerSet ?? ''}
+          onInput={(event) => {
+            const value = (event.target as HTMLInputElement).value;
+            setField('unitsPerSet', value === '' ? null : Number(value));
+          }}
+          min="1"
+          step="1"
+          inputMode="numeric"
+          placeholder="e.g. 4"
+          disabled={loading}
+        />
+        {errors.unitsPerSet && <span class="text-error text-sm mt-1 block">{errors.unitsPerSet}</span>}
+        {formData.unitsPerSet !== null && Number.isSafeInteger(formData.unitsPerSet) && formData.unitsPerSet > 0 ? (
+          <span class="form-hint block">
+            {formData.quantity} individual piece{formData.quantity === 1 ? '' : 's'} = {formData.quantity / formData.unitsPerSet} set{formData.quantity / formData.unitsPerSet === 1 ? '' : 's'}.
+          </span>
+        ) : (
+          <span class="form-hint block">Set this when catalogue prices cover more than one piece.</span>
+        )}
       </div>
 
       {isEditing && onChangeStock && (

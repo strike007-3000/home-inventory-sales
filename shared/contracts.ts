@@ -28,6 +28,7 @@ export interface ProductDTO {
   readonly consultantPricePaise: number | null;
   readonly quantity: number;
   readonly setStockQuantity: number;
+  readonly unitsPerSet: number | null;
   readonly lowStockLevel: number;
   readonly locationId: number | null;
   readonly locationName: string | null;
@@ -63,6 +64,8 @@ export interface SaleLineDTO {
   readonly lineTotalPaise: number;
   readonly setStockBefore: number;
   readonly setStockAfter: number;
+  readonly unitsPerSet: number | null;
+  readonly setPricePaise: number | null;
 }
 
 export interface SaleDTO {
@@ -119,8 +122,9 @@ export interface CreateSaleRequest {
   readonly lines: readonly {
     readonly productId: number;
     readonly quantity: number;
-    readonly unitPricePaise: number;
-    readonly setStockAfter: number;
+    readonly unitPricePaise?: number;
+    readonly setPricePaise?: number;
+    readonly setStockAfter?: number;
   }[];
   readonly discountPaise: number;
   readonly paymentMethod: string;
@@ -163,6 +167,7 @@ export interface CreateProductRequest {
   readonly lowStockLevel: number;
   readonly quantity: number;
   readonly setStockQuantity?: number;
+  readonly unitsPerSet?: number | null;
   readonly locationId?: number | null;
   readonly personalUse?: boolean;
   readonly active: boolean;

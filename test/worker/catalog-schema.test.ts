@@ -90,6 +90,28 @@ describe('inventory catalogue schema', () => {
     });
   });
 
+  it('stores only positive whole-number pieces-per-set values', async () => {
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `INSERT INTO products (
+         name, selling_price_minor, stock_quantity, set_stock_quantity,
+         units_per_set, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).bind('Four Bottle Set', 66_000, 14, 3.5, 4, now, now).run();
+
+    const configured = await env.DB.prepare(
+      'SELECT units_per_set FROM products WHERE name = ?',
+    ).bind('Four Bottle Set').first<{ units_per_set: number }>();
+    expect(configured?.units_per_set).toBe(4);
+
+    await expect(env.DB.prepare(
+      `INSERT INTO products (
+         name, selling_price_minor, stock_quantity, set_stock_quantity,
+         units_per_set, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).bind('Invalid Set Size', 66_000, 4, 1, 1.5, now, now).run()).rejects.toThrow();
+  });
+
   it('keeps LIDS outside inventory and falls back to MRP when SP is zero', async () => {
     const now = new Date().toISOString();
     const insert = `

@@ -465,6 +465,7 @@ async function handleStockChange(
     consultantPricePaise: updated.cost_price_minor as number | null,
     quantity: updated.stock_quantity as number,
     setStockQuantity: updated.set_stock_quantity as number,
+    unitsPerSet: updated.units_per_set as number | null,
     lowStockLevel: updated.low_stock_level as number,
     locationId: updated.location_id as number | null,
     locationName: updated.location_name as string | null,

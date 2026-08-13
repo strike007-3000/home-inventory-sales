@@ -70,6 +70,12 @@ function validateSetStock(value: number): void {
   }
 }
 
+function validateUnitsPerSet(value: number | null): void {
+  if (value !== null && (!Number.isSafeInteger(value) || value <= 0)) {
+    throw new ProductDomainError('Pieces per set must be a positive whole number', 400);
+  }
+}
+
 async function validateLocation(env: Env, locationId: number | null): Promise<void> {
   if (locationId === null) return;
   if (!Number.isSafeInteger(locationId) || locationId <= 0) {
@@ -100,6 +106,7 @@ function buildProductDTO(
     consultantPricePaise: row.cost_price_minor as number | null,
     quantity: row.stock_quantity as number,
     setStockQuantity: row.set_stock_quantity as number,
+    unitsPerSet: row.units_per_set as number | null,
     lowStockLevel: row.low_stock_level as number,
     locationId: row.location_id as number | null,
     locationName: row.location_name as string | null,
@@ -190,6 +197,7 @@ async function createProduct(
   const size = optionalText(request.size);
   const category = optionalText(request.category);
   const setStockQuantity = request.setStockQuantity ?? 0;
+  const unitsPerSet = request.unitsPerSet ?? null;
   const mrpPaise = request.mrpPaise ?? null;
   const consultantPricePaise = request.consultantPricePaise ?? null;
   const locationId = request.locationId ?? null;
@@ -202,6 +210,7 @@ async function createProduct(
   validateOptionalMoney(mrpPaise, 'MRP');
   validateOptionalMoney(consultantPricePaise, 'Consultant price');
   validateSetStock(setStockQuantity);
+  validateUnitsPerSet(unitsPerSet);
   await validateLocation(env, locationId);
 
   // Validate quantities
@@ -230,10 +239,10 @@ async function createProduct(
   const result = await env.DB.prepare(
     `INSERT INTO products (
        sku, name, category, colour, size, selling_price_minor,
-       cost_price_minor, stock_quantity, set_stock_quantity, mrp_minor,
+       cost_price_minor, stock_quantity, set_stock_quantity, units_per_set, mrp_minor,
        low_stock_level, location_id, personal_use, active,
        created_at, updated_at, version
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
   )
     .bind(
       sku,
@@ -245,6 +254,7 @@ async function createProduct(
       consultantPricePaise,
       request.quantity,
       setStockQuantity,
+      unitsPerSet,
       mrpPaise,
       request.lowStockLevel,
       locationId,
@@ -316,6 +326,9 @@ async function updateProduct(
     : optionalText(request.size);
   const category = optionalText(request.category);
   const setStockQuantity = request.setStockQuantity ?? current.set_stock_quantity as number;
+  const unitsPerSet = request.unitsPerSet === undefined
+    ? current.units_per_set as number | null
+    : request.unitsPerSet;
   const mrpPaise = request.mrpPaise === undefined
     ? current.mrp_minor as number | null
     : request.mrpPaise;
@@ -336,6 +349,7 @@ async function updateProduct(
   validateOptionalMoney(mrpPaise, 'MRP');
   validateOptionalMoney(consultantPricePaise, 'Consultant price');
   validateSetStock(setStockQuantity);
+  validateUnitsPerSet(unitsPerSet);
   await validateLocation(env, locationId);
 
   // Validate quantities
@@ -372,7 +386,7 @@ async function updateProduct(
     `UPDATE products
      SET sku = ?, name = ?, category = ?, colour = ?, size = ?,
          selling_price_minor = ?, cost_price_minor = ?, mrp_minor = ?,
-         low_stock_level = ?, location_id = ?, personal_use = ?, active = ?,
+         units_per_set = ?, low_stock_level = ?, location_id = ?, personal_use = ?, active = ?,
          version = version + 1, updated_at = ?
      WHERE id = ? AND version = ?`
   )
@@ -385,6 +399,7 @@ async function updateProduct(
       request.pricePaise,
       consultantPricePaise,
       mrpPaise,
+      unitsPerSet,
       request.lowStockLevel,
       locationId,
       personalUse ? 1 : 0,

@@ -9,13 +9,13 @@ A private, touch-friendly inventory and sales application for a small home busin
 - Responsive product cards with colour/size details, selected state styling for items in draft sales, and labelled actions for editing, activation, and audited stock changes
 - Password visibility toggle with accessible show/hide control on the login screen
 - Stock delivery, physical counts, and reasoned corrections that update both individual QTY and fractional Stock/set values
-- Sales with editable customer name and sale date, colour-aware product selection, "Sale price per unit (₹)" unit price overrides, discounts, payment method, partial/unpaid balances, later payments, and cancellation
+- Sales with editable customer name and sale date, set and loose-piece selection, proportional set pricing, discounts, payment method, partial/unpaid balances, later payments, and cancellation
 - Draft-safe sale flow with Back to items and explicit Discard sale actions
 - Searchable sales history with instant horizontal payment-status filter pills (`All sales`, `Paid`, `Unpaid`, `Partial`, `Cancelled`) and status chips (`Paid`, `Partially paid`, `Unpaid`, `Cancelled`)
 - Unified 50/50 side-by-side search bars with Deep Midnight Navy Blue (`#0f2b5c`) search buttons across Sales, Products, and LIDS
 - Separate LIDS market-price lookup that never participates in inventory stock
 - Dashboard attention items with direct product navigation, auto-scrolling, neutral "Opened from Home" product badges, and quiet fallback notice on refresh failure
-- Metric summary cards with visual icon badges for Today's revenue, Total revenue, Out of stock alert, and Stock Valuations (CP, SRP, MRP)
+- Metric summary cards with visual icon badges for Today's revenue, Total revenue, Out of stock, legacy Stock/set valuations, and sale-aware individual-QTY valuations (CP, SRP, MRP)
 - Clean navigation shell with refreshed SVG line icons, application logo icon (`AppLogo`), top-right mobile logout, and desktop sidebar footer logout
 - Shared-password authentication with signed cookies and CSRF protection
 - Responsive desktop, phone, and iPad layouts with parent-friendly high-contrast indicators and stacked mobile page headers

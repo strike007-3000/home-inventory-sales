@@ -6,6 +6,7 @@ type ProductRow = {
   name: string;
   stock_quantity: number;
   set_stock_quantity: number;
+  units_per_set: number | null;
   version: number;
   active: number;
 };
@@ -33,6 +34,8 @@ type SaleItemRow = {
   line_total_minor: number;
   set_stock_before: number;
   set_stock_after: number;
+  units_per_set_snapshot: number | null;
+  set_price_minor_snapshot: number | null;
 };
 
 type PaymentRow = {
@@ -98,7 +101,8 @@ async function readSale(id: number, env: Env): Promise<SaleDTO | null> {
 
   const items = await env.DB.prepare(
     `SELECT product_id, product_name_snapshot, unit_price_minor, quantity,
-            line_total_minor, set_stock_before, set_stock_after
+            line_total_minor, set_stock_before, set_stock_after,
+            units_per_set_snapshot, set_price_minor_snapshot
      FROM sale_items WHERE sale_id = ? ORDER BY id`,
   ).bind(id).all<SaleItemRow>();
   const paymentRows = await env.DB.prepare(
@@ -128,6 +132,8 @@ async function readSale(id: number, env: Env): Promise<SaleDTO | null> {
       lineTotalPaise: item.line_total_minor,
       setStockBefore: item.set_stock_before,
       setStockAfter: item.set_stock_after,
+      unitsPerSet: item.units_per_set_snapshot,
+      setPricePaise: item.set_price_minor_snapshot,
     })),
     subtotalPaise: sale.subtotal_minor,
     discountPaise: sale.discount_minor,
@@ -187,10 +193,13 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     if (!Number.isSafeInteger(line.quantity) || line.quantity <= 0) {
       return errorResponse('Quantity must be a positive safe integer', 400, 'quantity');
     }
-    if (!isNonNegativeMoney(line.unitPricePaise)) {
+    if (line.unitPricePaise !== undefined && !isNonNegativeMoney(line.unitPricePaise)) {
       return errorResponse('Unit price must be a non-negative safe integer', 400, 'unitPricePaise');
     }
-    if (!isNonNegativeFinite(line.setStockAfter)) {
+    if (line.setPricePaise !== undefined && !isNonNegativeMoney(line.setPricePaise)) {
+      return errorResponse('Set price must be a non-negative safe integer', 400, 'setPricePaise');
+    }
+    if (line.setStockAfter !== undefined && !isNonNegativeFinite(line.setStockAfter)) {
       return errorResponse('Stock/set count must be a non-negative number', 400, 'setStockAfter');
     }
   }
@@ -198,20 +207,47 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
   const ids = [...seen];
   const placeholders = ids.map(() => '?').join(',');
   const rows = await env.DB.prepare(
-    `SELECT id, name, stock_quantity, set_stock_quantity, version, active
+    `SELECT id, name, stock_quantity, set_stock_quantity, units_per_set, version, active
      FROM products WHERE id IN (${placeholders})`,
   ).bind(...ids).all<ProductRow>();
   const products = new Map(rows.results.map((row) => [row.id, row]));
 
+  const computedLines = new Map<number, { lineTotal: number; unitPrice: number; setPrice: number | null; setStockAfter: number }>();
   let subtotal = 0;
   for (const line of body.lines) {
     const product = products.get(line.productId);
     if (!product || !product.active) return errorResponse(`Product ${line.productId} is not available`, 404, 'productId');
     if (line.quantity > product.stock_quantity) return errorResponse(`Not enough stock for ${product.name}`, 409, 'quantity');
-    const lineTotal = line.unitPricePaise * line.quantity;
-    if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) {
-      return errorResponse('Sale total exceeds the safe integer range', 400, 'unitPricePaise');
+    let lineTotal: number;
+    let unitPrice: number;
+    let setPrice: number | null = null;
+    let setStockAfter: number;
+    if (product.units_per_set) {
+      if (!isNonNegativeMoney(line.setPricePaise)) {
+        return errorResponse('Set price is required for configured products', 400, 'setPricePaise');
+      }
+      const numerator = BigInt(line.setPricePaise) * BigInt(line.quantity);
+      const denominator = BigInt(product.units_per_set);
+      const rounded = numerator / denominator + ((numerator % denominator) * 2n >= denominator ? 1n : 0n);
+      if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) {
+        return errorResponse('Sale total exceeds the safe integer range', 400, 'setPricePaise');
+      }
+      lineTotal = Number(rounded);
+      unitPrice = Math.floor((line.setPricePaise + Math.floor(product.units_per_set / 2)) / product.units_per_set);
+      setPrice = line.setPricePaise;
+      setStockAfter = (product.stock_quantity - line.quantity) / product.units_per_set;
+    } else {
+      if (!isNonNegativeMoney(line.unitPricePaise) || !isNonNegativeFinite(line.setStockAfter)) {
+        return errorResponse('Unit price and resulting Stock/set are required until pieces per set is configured', 400, 'lines');
+      }
+      lineTotal = line.unitPricePaise * line.quantity;
+      unitPrice = line.unitPricePaise;
+      setStockAfter = line.setStockAfter;
     }
+    if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) {
+      return errorResponse('Sale total exceeds the safe integer range', 400, 'lines');
+    }
+    computedLines.set(line.productId, { lineTotal, unitPrice, setPrice, setStockAfter });
     subtotal += lineTotal;
   }
   if (body.discountPaise > subtotal) return errorResponse('Discount cannot exceed subtotal', 400, 'discountPaise');
@@ -243,19 +279,21 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
 
   for (const line of body.lines) {
     const product = products.get(line.productId)!;
+    const computed = computedLines.get(line.productId)!;
     batch.push(env.DB.prepare(
       `UPDATE products SET stock_quantity = stock_quantity - ?, set_stock_quantity = ?, updated_at = ?, version = version + 1
        WHERE id = ? AND version = ? AND EXISTS (SELECT 1 FROM sales WHERE idempotency_key = ?)`,
-    ).bind(line.quantity, line.setStockAfter, now, line.productId, product.version, key));
+    ).bind(line.quantity, computed.setStockAfter, now, line.productId, product.version, key));
     batch.push(env.DB.prepare(
-      `INSERT INTO sale_items (sale_id, product_id, product_name_snapshot, unit_price_minor, quantity, line_total_minor, set_stock_before, set_stock_after)
-       SELECT id, ?, ?, ?, ?, ?, ?, ? FROM sales WHERE idempotency_key = ?`,
-    ).bind(line.productId, product.name, line.unitPricePaise, line.quantity, line.unitPricePaise * line.quantity,
-      product.set_stock_quantity, line.setStockAfter, key));
+      `INSERT INTO sale_items (sale_id, product_id, product_name_snapshot, unit_price_minor, quantity, line_total_minor,
+         set_stock_before, set_stock_after, units_per_set_snapshot, set_price_minor_snapshot)
+       SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM sales WHERE idempotency_key = ?`,
+    ).bind(line.productId, product.name, computed.unitPrice, line.quantity, computed.lineTotal,
+      product.set_stock_quantity, computed.setStockAfter, product.units_per_set, computed.setPrice, key));
     batch.push(env.DB.prepare(
       `INSERT INTO stock_movements (product_id, quantity_delta, set_stock_delta, reason, sale_id, note, created_at)
        SELECT ?, ?, ?, 'sale', id, ?, ? FROM sales WHERE idempotency_key = ?`,
-    ).bind(line.productId, -line.quantity, line.setStockAfter - product.set_stock_quantity,
+    ).bind(line.productId, -line.quantity, computed.setStockAfter - product.set_stock_quantity,
       `Sold ${line.quantity} unit${line.quantity === 1 ? '' : 's'}`, now, key));
   }
 

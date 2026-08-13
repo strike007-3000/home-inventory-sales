@@ -15,6 +15,7 @@ export interface ProductFormData {
   consultantPricePaise: number | null;
   quantity: number;
   setStockQuantity: number;
+  unitsPerSet: number | null;
   lowStockLevel: number;
   locationId: number | null;
   personalUse: boolean;
