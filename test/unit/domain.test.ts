@@ -822,6 +822,19 @@ describe('set pricing and QTY-derived valuation', () => {
     });
   });
 
+  it('preserves legacy value and flags missing packaging when QTY is zero but Stock/set remains', () => {
+    const staleZeroQty = { ...bottle, quantity: 0, setStockQuantity: 2, unitsPerSet: null };
+    const state = { ...createInitialState(), products: new Map([[staleZeroQty.id, staleZeroQty]]) };
+    expect(getInventoryValuationComparison(state)).toEqual({
+      ok: true,
+      value: {
+        legacySetBased: { cpPaise: 100320, srpPaise: 132000, mrpPaise: 176000 },
+        quantityDerived: { cpPaise: 0, srpPaise: 0, mrpPaise: 0 },
+        unconfiguredCount: 1,
+      },
+    });
+  });
+
   it('rejects invalid packaging and unsafe totals', () => {
     expect(calculateProportionalLineTotal(66000, 1, 0).ok).toBe(false);
     expect(calculateProportionalLineTotal(Number.MAX_SAFE_INTEGER, 2, 1).ok).toBe(false);

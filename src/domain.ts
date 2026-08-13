@@ -1050,7 +1050,10 @@ export function getInventoryValuationComparison(
   let unconfiguredCount = 0;
 
   for (const product of state.products.values()) {
-    if (!product.active || product.quantity <= 0) continue;
+    if (!product.active) continue;
+    if (!Number.isSafeInteger(product.quantity) || product.quantity < 0) {
+      return Err(`Invalid QTY for ${product.name}`);
+    }
 
     const unitsPerSet = product.unitsPerSet;
     const setStock = product.setStockQuantity ?? (unitsPerSet ? product.quantity / unitsPerSet : product.quantity);
@@ -1078,7 +1081,7 @@ export function getInventoryValuationComparison(
       }
       legacySetBased[key] = nextLegacy;
 
-      if (unitsPerSet) {
+      if (unitsPerSet && product.quantity > 0) {
         const derivedValue = calculateProportionalLineTotal(price, product.quantity, unitsPerSet);
         if (!derivedValue.ok) return derivedValue;
         const nextDerived = quantityDerived[key] + derivedValue.value;
@@ -1086,7 +1089,7 @@ export function getInventoryValuationComparison(
         quantityDerived[key] = nextDerived;
       }
     }
-    if (!unitsPerSet) unconfiguredCount += 1;
+    if (!unitsPerSet && (product.quantity > 0 || setStock > 0)) unconfiguredCount += 1;
   }
 
   return Ok({ legacySetBased, quantityDerived, unconfiguredCount });
