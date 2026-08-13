@@ -4,5 +4,5 @@ updates:
     directory: /
     schedule:
       interval: cron
-      cronjob: every 15 days
+      cronjob: "0 9 1,16 * *"
       timezone: Europe/Brussels

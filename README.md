@@ -20,7 +20,7 @@ A private, touch-friendly inventory and sales application for a small home busin
 - Shared-password authentication with signed cookies and CSRF protection
 - Responsive desktop, phone, and iPad layouts with parent-friendly high-contrast indicators and stacked mobile page headers
 - Automatic production builds and deployments from GitHub `main`
-- Dependabot version checks for npm dependencies every 15 days, alongside vulnerability alerts and security-update pull requests
+- Dependabot version checks for npm dependencies twice monthly, on the 1st and 16th, alongside vulnerability alerts and security-update pull requests
 
 ## Technology
 
