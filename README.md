@@ -5,7 +5,7 @@ A private, touch-friendly inventory and sales application for a small home busin
 ## Current capabilities
 
 - Inventory catalogue with colour, optional size, QTY, Stock/set count, MRP, SRP/SP, consultant price, location, and self-use indication
-- Product discovery with instant Active / Inactive / All filter pills, search integration, and truthful total/active/inactive status summary
+- Product discovery with instant Active / Inactive / All / Personal / Needs setup filters, search integration, and truthful status summaries
 - Responsive product cards with colour/size details, selected state styling for items in draft sales, and labelled actions for editing, activation, and audited stock changes
 - Password visibility toggle with accessible show/hide control on the login screen
 - Stock delivery, physical counts, and reasoned corrections that update both individual QTY and fractional Stock/set values
@@ -20,6 +20,7 @@ A private, touch-friendly inventory and sales application for a small home busin
 - Shared-password authentication with signed cookies and CSRF protection
 - Responsive desktop, phone, and iPad layouts with parent-friendly high-contrast indicators and stacked mobile page headers
 - Automatic production builds and deployments from GitHub `main`
+- Dependabot version checks for npm dependencies every 15 days, alongside vulnerability alerts and security-update pull requests
 
 ## Technology
 

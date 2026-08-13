@@ -4,6 +4,12 @@
 
 Migration `0008_units_per_set.sql` infers Pieces in one set only when the existing positive `QTY ÷ Stock/set` ratio is a whole number. For example, QTY 14 and Stock/set 3.5 becomes 4. Zero or ambiguous ratios remain unconfigured; review them in Products → Edit details before relying on individual-QTY Dashboard values. The value can be corrected later without changing stock.
 
+Use Products → **Needs setup** to list the same active products counted by the Dashboard warning. Each result can be corrected through **Edit details**.
+
+## Dependency updates
+
+Dependabot checks npm dependencies every 15 days using `.github/dependabot.yml`. Vulnerability alerts and automatic security-update pull requests remain enabled in the repository security settings.
+
 ## Deployment resources
 
 Each fork must create and configure its own:
