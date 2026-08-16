@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.20.3",
-    "@cloudflare/workers-types": "^5.20260808.1",
+    "@cloudflare/workers-types": "^5.20260813.1",
     "@playwright/test": "^1.62.1",
     "@preact/preset-vite": "^2.10.6",
     "typescript": "^5.5.3",
