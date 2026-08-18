@@ -24,14 +24,30 @@ import {
   getInventoryValuationComparison,
   calculateProportionalLineTotal,
   deriveSetStock,
+  getProductSetupIssue,
+  calculateSetStockAfterSale,
   searchProducts,
   getTodayKolkata,
   validateQuantity,
   type SaleDraft,
   type RestockLine,
   type Product,
+  type InventoryState,
 } from '../../src/domain';
 import { createInitialState, PRODUCT_IDS } from '../fixtures/inventory-state';
+
+function createSaleReadyState(productId = PRODUCT_IDS.LUNCH_BOX_BLUE): InventoryState {
+  const state = createInitialState();
+  const product = state.products.get(productId)!;
+  return {
+    ...state,
+    products: new Map(state.products).set(productId, {
+      ...product,
+      unitsPerSet: 1,
+      setStockQuantity: product.quantity,
+    }),
+  };
+}
 
 describe('formatInr', () => {
   it('formats whole rupees without decimal', () => {
@@ -202,6 +218,17 @@ describe('calculateSaleSubtotal', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('rejects a draft containing an unavailable product', () => {
+    const state = createInitialState();
+    const draft = {
+      lines: [{ productId: 999999, quantity: 1 }],
+      discountPaise: 0,
+      paymentMethod: 'upi' as const,
+    };
+
+    expect(calculateSaleSubtotal(draft, state.products)).toEqual({ ok: false, error: 'Product not found' });
+  });
+
   it('handles zero price products', () => {
     const state = createInitialState();
     const draft = {
@@ -220,7 +247,7 @@ describe('calculateSaleSubtotal', () => {
 
 describe('completeSale', () => {
   it('completes a valid sale and reduces stock', () => {
-    const state = createInitialState();
+    const state = createSaleReadyState();
     const initialProduct = state.products.get(PRODUCT_IDS.LUNCH_BOX_BLUE);
     expect(initialProduct).toBeDefined();
     if (!initialProduct) return;
@@ -266,7 +293,7 @@ describe('completeSale', () => {
   });
 
   it('rejects sale with insufficient stock without mutating', () => {
-    const state = createInitialState();
+    const state = createSaleReadyState();
     const initialProduct = state.products.get(PRODUCT_IDS.LUNCH_BOX_BLUE);
     expect(initialProduct).toBeDefined();
     if (!initialProduct) return;
@@ -288,7 +315,7 @@ describe('completeSale', () => {
   });
 
   it('depletes stock to zero successfully', () => {
-    const state = createInitialState();
+    const state = createSaleReadyState(PRODUCT_IDS.LUNCH_BOX_GREEN);
     const product = state.products.get(PRODUCT_IDS.LUNCH_BOX_GREEN);
     expect(product).toBeDefined();
     if (!product) return;
@@ -312,7 +339,7 @@ describe('completeSale', () => {
   });
 
   it('applies discount correctly', () => {
-    const state = createInitialState();
+    const state = createSaleReadyState();
 
     const draft = {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 2 }],
@@ -333,11 +360,21 @@ describe('completeSale', () => {
       expect(sale?.totalPaise).toBe(89800);
     }
   });
+
+  it('allows sales while products still need setup', () => {
+    const initial = createInitialState();
+    const product = initial.products.get(PRODUCT_IDS.LUNCH_BOX_BLUE)!;
+    const draft = { lines: [{ productId: product.id, quantity: 1 }], discountPaise: 0, paymentMethod: 'upi' as const };
+    const missing = completeSale({ ...initial, products: new Map([[product.id, { ...product, unitsPerSet: null }]]), saleDraft: draft }, 'missing-setup');
+    const mismatch = completeSale({ ...initial, products: new Map([[product.id, { ...product, setStockQuantity: product.quantity - 0.5 }]]), saleDraft: draft }, 'mismatch-setup');
+    expect(missing.ok).toBe(true);
+    expect(mismatch.ok).toBe(true);
+  });
 });
 
 describe('cancelSale', () => {
   it('cancels a sale and restores stock', () => {
-    let state = createInitialState();
+    let state = createSaleReadyState();
     const initialProduct = state.products.get(PRODUCT_IDS.LUNCH_BOX_BLUE);
     expect(initialProduct).toBeDefined();
     if (!initialProduct) return;
@@ -377,7 +414,7 @@ describe('cancelSale', () => {
   });
 
   it('rejects cancelling already cancelled sale', () => {
-    let state = createInitialState();
+    let state = createSaleReadyState();
 
     // Complete a sale
     const draft = {
@@ -404,6 +441,21 @@ describe('cancelSale', () => {
     // Try to cancel again
     const secondCancel = cancelSale(firstCancel.value, saleId, 'Second cancel');
     expect(secondCancel.ok).toBe(false);
+  });
+
+  it('restores the exact recorded Stock/set delta after later stock changes', () => {
+    const product = { ...createInitialState().products.get(PRODUCT_IDS.LUNCH_BOX_BLUE)!, quantity: 1, setStockQuantity: 1 / 3, unitsPerSet: 3 };
+    const initial = createInitialState();
+    const completed = completeSale({ ...initial, products: new Map([[product.id, product]]), saleDraft: {
+      lines: [{ productId: product.id, quantity: 1 }], discountPaise: 0, paymentMethod: 'upi',
+    } }, 'exact-set-delta');
+    expect(completed.ok).toBe(true);
+    if (!completed.ok) return;
+    const currentSetStock = 2.123456789012345;
+    const changedProduct = { ...completed.value.products.get(product.id)!, setStockQuantity: currentSetStock };
+    const cancelled = cancelSale({ ...completed.value, products: new Map([[product.id, changedProduct]]) }, completed.value.sales[0]!.id, 'Undo');
+    expect(cancelled.ok).toBe(true);
+    if (cancelled.ok) expect(cancelled.value.products.get(product.id)?.setStockQuantity).toBe(currentSetStock + 1 / 3);
   });
 });
 
@@ -620,7 +672,7 @@ describe('Reset state', () => {
 
 describe('Idempotency', () => {
   it('returns the same result when the same idempotency key is reused', () => {
-    const state = createInitialState();
+    const state = createSaleReadyState();
     const idempotencyKey = 'stable-test-key-1';
 
     const draft: SaleDraft = {
@@ -641,7 +693,7 @@ describe('Idempotency', () => {
   });
 
   it('creates a new sale when the idempotency key changes', () => {
-    const state = createInitialState();
+    const state = createSaleReadyState();
 
     const draft: SaleDraft = {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 1 }],
@@ -797,6 +849,27 @@ describe('set pricing and QTY-derived valuation', () => {
     expect(deriveSetStock(10, 4)).toEqual({ ok: true, value: 2.5 });
   });
 
+  it('flags missing and inconsistent stock setup without changing saved values', () => {
+    expect(getProductSetupIssue({ ...bottle, unitsPerSet: null })).toBe('Pieces per set is missing.');
+    expect(getProductSetupIssue({ ...bottle, quantity: 1, setStockQuantity: 0.5, unitsPerSet: 1 }))
+      .toBe('1 piece should equal 1 set, but Stock/set is 0.5.');
+    expect(getProductSetupIssue({ ...bottle, quantity: 1, setStockQuantity: 0.5, unitsPerSet: 2 })).toBeNull();
+  });
+
+  it('normalizes valid final and near-zero Stock/set values', () => {
+    expect(calculateSetStockAfterSale({ ...bottle, quantity: 1, setStockQuantity: 0.5, unitsPerSet: 2 }, 1))
+      .toEqual({ ok: true, value: 0 });
+    expect(calculateSetStockAfterSale({ ...bottle, quantity: 1, setStockQuantity: 0.5, unitsPerSet: 1 }, 1))
+      .toEqual({ ok: true, value: 0 });
+    expect(calculateSetStockAfterSale({ ...bottle, quantity: 3, setStockQuantity: 0.3, unitsPerSet: 10 }, 3))
+      .toEqual({ ok: true, value: 0 });
+  });
+
+  it('uses the tolerance boundary but rejects meaningful mismatches', () => {
+    expect(getProductSetupIssue({ ...bottle, setStockQuantity: 3.5 + 0.9e-9 })).toBeNull();
+    expect(getProductSetupIssue({ ...bottle, setStockQuantity: 3.5 + 1.1e-9 })).not.toBeNull();
+  });
+
   it('returns exact legacy and QTY-derived CP, SRP and MRP values', () => {
     const state = { ...createInitialState(), products: new Map([[bottle.id, bottle]]) };
     expect(getInventoryValuationComparison(state)).toEqual({
@@ -817,7 +890,7 @@ describe('set pricing and QTY-derived valuation', () => {
       value: {
         legacySetBased: { cpPaise: 175560, srpPaise: 231000, mrpPaise: 308000 },
         quantityDerived: { cpPaise: 125400, srpPaise: 165000, mrpPaise: 220000 },
-        unconfiguredCount: 0,
+        unconfiguredCount: 1,
       },
     });
   });

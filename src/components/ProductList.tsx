@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { useProducts, useCreateProduct, useUpdateProduct, useToggleProduct, useLocations, type ProductFormData } from '../hooks/useProducts';
-import { formatInr, needsUnitsPerSetConfiguration } from '../domain';
+import { formatInr, getProductSetupIssue, needsUnitsPerSetConfiguration } from '../domain';
 import { ProductForm } from './ProductForm';
 import { useStockChange } from '../hooks/useStock';
 import type { Product } from '../domain';
@@ -53,6 +53,9 @@ function StockChangeForm({ product, onCancel, onSaved, onConflict }: StockChange
   const setStockValid = Number.isFinite(nextSetStock) && nextSetStock >= 0;
   const changed = quantityValid && setStockValid &&
     (nextQuantity !== product.quantity || nextSetStock !== (product.setStockQuantity ?? 0));
+  const setupGuidance = quantityValid && setStockValid
+    ? getProductSetupIssue({ ...product, quantity: nextQuantity, setStockQuantity: nextSetStock })
+    : null;
 
   const handleSubmit = async (event: Event) => {
     event.preventDefault();
@@ -114,6 +117,11 @@ function StockChangeForm({ product, onCancel, onSaved, onConflict }: StockChange
       <div class="stock-change-preview" aria-live="polite">
         <div><span>Individual QTY</span><strong>{product.quantity} → {quantityValid ? nextQuantity : '—'}</strong><small>{changed && quantityValid ? formatDelta(nextQuantity - product.quantity) : 'No change'}</small></div>
         <div><span>Stock/set</span><strong>{product.setStockQuantity ?? 0} → {setStockValid ? nextSetStock : '—'}</strong><small>{changed && setStockValid ? formatDelta(nextSetStock - (product.setStockQuantity ?? 0)) : 'No change'}</small></div>
+      </div>
+      <div class="form-hint mb-4" aria-live="polite">
+        {setupGuidance
+          ? `${setupGuidance} ${product.unitsPerSet ? 'Adjust either stock value so they match.' : 'Use Edit details to add Pieces per set.'}`
+          : product.unitsPerSet ? 'Individual QTY and Stock/set match.' : ''}
       </div>
 
       <div class="form-group">
@@ -427,6 +435,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
               <div class="product-list">
                 {filteredProducts.map((product) => {
                   const isSelected = selectedProductId === product.id;
+                  const setupIssue = getProductSetupIssue(product);
                   return (
                     <article
                       key={product.id}
@@ -461,10 +470,15 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
                               Inactive
                             </span>
                           )}
-                          {needsUnitsPerSetConfiguration(product) && (
-                            <span class="status-chip status-chip-warning">Pieces/set needed</span>
+                          {setupIssue && (
+                            <span class="status-chip status-chip-warning">Needs setup</span>
                           )}
                         </div>
+                        {setupIssue && (
+                          <div class="text-sm text-ink-light mt-2">
+                            {setupIssue} Use Edit details for Pieces per set or Change stock to correct the saved stock.
+                          </div>
+                        )}
                     </div>
 
                     <div class="product-inventory">

@@ -27,13 +27,13 @@ async function api(path: string, method = 'GET', body?: unknown): Promise<Respon
   }));
 }
 
-async function addProduct(quantity = 8, setStock = 2): Promise<number> {
+async function addProduct(quantity = 8, setStock = 2, unitsPerSet: number | null = 4): Promise<number> {
   const now = new Date().toISOString();
   const result = await env.DB.prepare(
     `INSERT INTO products (name, selling_price_minor, stock_quantity, set_stock_quantity,
-      low_stock_level, active, version, created_at, updated_at)
-     VALUES ('Demo Set', 15000, ?, ?, 1, 1, 1, ?, ?)`,
-  ).bind(quantity, setStock, now, now).run();
+      units_per_set, low_stock_level, active, version, created_at, updated_at)
+     VALUES ('Demo Set', 15000, ?, ?, ?, 1, 1, 1, ?, ?)`,
+  ).bind(quantity, setStock, unitsPerSet, now, now).run();
   return Number(result.meta.last_row_id);
 }
 
@@ -90,13 +90,57 @@ describe('Sale API', () => {
       .bind(productId).first<any>()).toMatchObject({ stock_quantity: 13, set_stock_quantity: 3.25 });
   });
 
+  it('sells inconsistent configured stock from the saved Stock/set and clamps at zero', async () => {
+    const productId = await addConfiguredBottle(1);
+    await env.DB.prepare('UPDATE products SET set_stock_quantity = 0.5, units_per_set = 1 WHERE id = ?').bind(productId).run();
+    const response = await api('/api/sales', 'POST', {
+      idempotencyKey: 'inconsistent-stock', saleDate: '2026-07-15',
+      lines: [{ productId, quantity: 1, setPricePaise: 66000 }],
+      discountPaise: 0, paymentMethod: 'cash', receivedPaise: 66000,
+    });
+
+    expect(response.status).toBe(201);
+    expect(await response.json<any>()).toMatchObject({
+      lines: [{ setStockBefore: 0.5, setStockAfter: 0 }],
+    });
+    expect(await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?').bind(productId).first<any>())
+      .toMatchObject({ stock_quantity: 0, set_stock_quantity: 0 });
+    expect(await env.DB.prepare("SELECT quantity_delta, set_stock_delta FROM stock_movements WHERE product_id = ? AND reason = 'sale'")
+      .bind(productId).first<any>()).toMatchObject({ quantity_delta: -1, set_stock_delta: -0.5 });
+  });
+
+  it('sells the final piece from a valid half set to exact zero', async () => {
+    const productId = await addConfiguredBottle(1);
+    await env.DB.prepare('UPDATE products SET set_stock_quantity = 0.5, units_per_set = 2 WHERE id = ?').bind(productId).run();
+    const response = await api('/api/sales', 'POST', {
+      idempotencyKey: 'valid-half-set', saleDate: '2026-07-15',
+      lines: [{ productId, quantity: 1, setPricePaise: 66000 }],
+      discountPaise: 0, paymentMethod: 'cash', receivedPaise: 33000,
+    });
+    expect(response.status).toBe(201);
+    expect(await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?').bind(productId).first<any>())
+      .toMatchObject({ stock_quantity: 0, set_stock_quantity: 0 });
+  });
+
+  it('sells missing Pieces per set using the seller-entered resulting Stock/set', async () => {
+    const productId = await addProduct(1, 0.5, null);
+    const response = await api('/api/sales', 'POST', {
+      idempotencyKey: 'missing-pieces-per-set', saleDate: '2026-07-15',
+      lines: [{ productId, quantity: 1, unitPricePaise: 15000, setStockAfter: 0 }],
+      discountPaise: 0, paymentMethod: 'cash', receivedPaise: 15000,
+    });
+    expect(response.status).toBe(201);
+    expect(await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?').bind(productId).first<any>())
+      .toMatchObject({ stock_quantity: 0, set_stock_quantity: 0 });
+  });
+
   it('completes a sale with an edited price and seller-entered set stock', async () => {
     const productId = await addProduct();
     const response = await api('/api/sales', 'POST', {
       idempotencyKey: 'sale-success',
       saleDate: '2026-07-15',
       customerName: '  Anjali Rao  ',
-      lines: [{ productId, quantity: 3, unitPricePaise: 14000, setStockAfter: 1.25 }],
+      lines: [{ productId, quantity: 3, setPricePaise: 56000 }],
       discountPaise: 1000,
       paymentMethod: 'upi',
       receivedPaise: 20000,
@@ -119,7 +163,7 @@ describe('Sale API', () => {
     const payload = {
       idempotencyKey: 'same-submit',
       saleDate: '2026-07-15',
-      lines: [{ productId, quantity: 2, unitPricePaise: 15000, setStockAfter: 1.5 }],
+      lines: [{ productId, quantity: 2, setPricePaise: 60000 }],
       discountPaise: 0,
       paymentMethod: 'cash',
       receivedPaise: 0,
@@ -134,11 +178,11 @@ describe('Sale API', () => {
   });
 
   it('rejects insufficient quantity and leaves no partial sale', async () => {
-    const productId = await addProduct(1, 1);
+    const productId = await addProduct(1, 1, 1);
     const response = await api('/api/sales', 'POST', {
       idempotencyKey: 'too-many',
       saleDate: '2026-07-15',
-      lines: [{ productId, quantity: 2, unitPricePaise: 15000, setStockAfter: 0 }],
+      lines: [{ productId, quantity: 2, setPricePaise: 15000 }],
       discountPaise: 0,
       paymentMethod: 'upi',
       receivedPaise: 0,
@@ -153,7 +197,7 @@ describe('Sale API', () => {
     const created = await api('/api/sales', 'POST', {
       idempotencyKey: 'cancel-me',
       saleDate: '2026-07-15',
-      lines: [{ productId, quantity: 3, unitPricePaise: 15000, setStockAfter: 1.25 }],
+      lines: [{ productId, quantity: 3, setPricePaise: 60000 }],
       discountPaise: 0,
       paymentMethod: 'card',
       receivedPaise: 45000,
@@ -177,7 +221,7 @@ describe('Sale API', () => {
     const productId = await addProduct();
     const created = await api('/api/sales', 'POST', {
       idempotencyKey: 'pay-later', saleDate: '2026-07-15',
-      lines: [{ productId, quantity: 1, unitPricePaise: 15000, setStockAfter: 1.5 }],
+      lines: [{ productId, quantity: 1, setPricePaise: 60000 }],
       discountPaise: 0, paymentMethod: 'upi', receivedPaise: 0,
     });
     const sale = await created.json<any>();
@@ -195,7 +239,7 @@ describe('Sale API', () => {
     const productId = await addProduct();
     await api('/api/sales', 'POST', {
       idempotencyKey: 'history-one', saleDate: '2026-07-14', customerName: 'Meera Shah',
-      lines: [{ productId, quantity: 1, unitPricePaise: 15000, setStockAfter: 1.5 }],
+      lines: [{ productId, quantity: 1, setPricePaise: 60000 }],
       discountPaise: 0, paymentMethod: 'upi', receivedPaise: 5000,
     });
     const response = await api('/api/sales?q=meera&limit=50');
@@ -221,7 +265,7 @@ describe('Sale API', () => {
       idempotencyKey: 'update-metadata-test',
       saleDate: '2026-07-10',
       customerName: 'Original Name',
-      lines: [{ productId, quantity: 2, unitPricePaise: 15000, setStockAfter: 1 }],
+      lines: [{ productId, quantity: 2, setPricePaise: 60000 }],
       discountPaise: 1000,
       paymentMethod: 'upi',
       receivedPaise: 29000,

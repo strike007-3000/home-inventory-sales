@@ -235,7 +235,8 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
       lineTotal = Number(rounded);
       unitPrice = Math.floor((line.setPricePaise + Math.floor(product.units_per_set / 2)) / product.units_per_set);
       setPrice = line.setPricePaise;
-      setStockAfter = (product.stock_quantity - line.quantity) / product.units_per_set;
+      const nextSetStock = product.set_stock_quantity - line.quantity / product.units_per_set;
+      setStockAfter = nextSetStock <= 1e-9 ? 0 : Number(nextSetStock.toFixed(12));
     } else {
       if (!isNonNegativeMoney(line.unitPricePaise) || !isNonNegativeFinite(line.setStockAfter)) {
         return errorResponse('Unit price and resulting Stock/set are required until pieces per set is configured', 400, 'lines');
