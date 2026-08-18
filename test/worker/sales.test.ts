@@ -90,23 +90,23 @@ describe('Sale API', () => {
       .bind(productId).first<any>()).toMatchObject({ stock_quantity: 13, set_stock_quantity: 3.25 });
   });
 
-  it('rejects inconsistent configured stock without creating a sale or movement', async () => {
+  it('sells inconsistent configured stock from the saved Stock/set and clamps at zero', async () => {
     const productId = await addConfiguredBottle(1);
     await env.DB.prepare('UPDATE products SET set_stock_quantity = 0.5, units_per_set = 1 WHERE id = ?').bind(productId).run();
-    const movementsBefore = (await env.DB.prepare('SELECT COUNT(*) AS count FROM stock_movements WHERE product_id = ?').bind(productId).first<{ count: number }>())!.count;
-
     const response = await api('/api/sales', 'POST', {
       idempotencyKey: 'inconsistent-stock', saleDate: '2026-07-15',
       lines: [{ productId, quantity: 1, setPricePaise: 66000 }],
       discountPaise: 0, paymentMethod: 'cash', receivedPaise: 66000,
     });
 
-    expect(response.status).toBe(409);
-    expect(await response.json<any>()).toMatchObject({ error: 'Stock values need review for 310 ML Bottles' });
+    expect(response.status).toBe(201);
+    expect(await response.json<any>()).toMatchObject({
+      lines: [{ setStockBefore: 0.5, setStockAfter: 0 }],
+    });
     expect(await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?').bind(productId).first<any>())
-      .toMatchObject({ stock_quantity: 1, set_stock_quantity: 0.5 });
-    expect((await env.DB.prepare('SELECT COUNT(*) AS count FROM sale_items WHERE product_id = ?').bind(productId).first<{ count: number }>())!.count).toBe(0);
-    expect((await env.DB.prepare('SELECT COUNT(*) AS count FROM stock_movements WHERE product_id = ?').bind(productId).first<{ count: number }>())!.count).toBe(movementsBefore);
+      .toMatchObject({ stock_quantity: 0, set_stock_quantity: 0 });
+    expect(await env.DB.prepare("SELECT quantity_delta, set_stock_delta FROM stock_movements WHERE product_id = ? AND reason = 'sale'")
+      .bind(productId).first<any>()).toMatchObject({ quantity_delta: -1, set_stock_delta: -0.5 });
   });
 
   it('sells the final piece from a valid half set to exact zero', async () => {
@@ -122,16 +122,16 @@ describe('Sale API', () => {
       .toMatchObject({ stock_quantity: 0, set_stock_quantity: 0 });
   });
 
-  it('rejects missing Pieces per set without changing stock', async () => {
+  it('sells missing Pieces per set using the seller-entered resulting Stock/set', async () => {
     const productId = await addProduct(1, 0.5, null);
     const response = await api('/api/sales', 'POST', {
       idempotencyKey: 'missing-pieces-per-set', saleDate: '2026-07-15',
       lines: [{ productId, quantity: 1, unitPricePaise: 15000, setStockAfter: 0 }],
       discountPaise: 0, paymentMethod: 'cash', receivedPaise: 15000,
     });
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(201);
     expect(await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?').bind(productId).first<any>())
-      .toMatchObject({ stock_quantity: 1, set_stock_quantity: 0.5 });
+      .toMatchObject({ stock_quantity: 0, set_stock_quantity: 0 });
   });
 
   it('completes a sale with an edited price and seller-entered set stock', async () => {

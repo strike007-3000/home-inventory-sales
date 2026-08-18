@@ -218,6 +218,17 @@ describe('calculateSaleSubtotal', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('rejects a draft containing an unavailable product', () => {
+    const state = createInitialState();
+    const draft = {
+      lines: [{ productId: 999999, quantity: 1 }],
+      discountPaise: 0,
+      paymentMethod: 'upi' as const,
+    };
+
+    expect(calculateSaleSubtotal(draft, state.products)).toEqual({ ok: false, error: 'Product not found' });
+  });
+
   it('handles zero price products', () => {
     const state = createInitialState();
     const draft = {
@@ -350,14 +361,14 @@ describe('completeSale', () => {
     }
   });
 
-  it('rejects stale drafts for products that still need setup', () => {
+  it('allows sales while products still need setup', () => {
     const initial = createInitialState();
     const product = initial.products.get(PRODUCT_IDS.LUNCH_BOX_BLUE)!;
     const draft = { lines: [{ productId: product.id, quantity: 1 }], discountPaise: 0, paymentMethod: 'upi' as const };
     const missing = completeSale({ ...initial, products: new Map([[product.id, { ...product, unitsPerSet: null }]]), saleDraft: draft }, 'missing-setup');
     const mismatch = completeSale({ ...initial, products: new Map([[product.id, { ...product, setStockQuantity: product.quantity - 0.5 }]]), saleDraft: draft }, 'mismatch-setup');
-    expect(missing.ok).toBe(false);
-    expect(mismatch.ok).toBe(false);
+    expect(missing.ok).toBe(true);
+    expect(mismatch.ok).toBe(true);
   });
 });
 
@@ -847,6 +858,8 @@ describe('set pricing and QTY-derived valuation', () => {
 
   it('normalizes valid final and near-zero Stock/set values', () => {
     expect(calculateSetStockAfterSale({ ...bottle, quantity: 1, setStockQuantity: 0.5, unitsPerSet: 2 }, 1))
+      .toEqual({ ok: true, value: 0 });
+    expect(calculateSetStockAfterSale({ ...bottle, quantity: 1, setStockQuantity: 0.5, unitsPerSet: 1 }, 1))
       .toEqual({ ok: true, value: 0 });
     expect(calculateSetStockAfterSale({ ...bottle, quantity: 3, setStockQuantity: 0.3, unitsPerSet: 10 }, 3))
       .toEqual({ ok: true, value: 0 });

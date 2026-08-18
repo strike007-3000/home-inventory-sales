@@ -204,7 +204,7 @@ function ProductCard({
           </button>
           <span class="quantity-value">{value}</span>
           <button class="quantity-btn" onClick={() => onQuantityChange(increaseTo)}
-            disabled={!!setupIssue || (isSaleQuantity && isOutOfStock) || (maxQuantity !== undefined && increaseTo > maxQuantity)}
+            disabled={(isSaleQuantity && isOutOfStock) || (maxQuantity !== undefined && increaseTo > maxQuantity)}
             type="button" aria-label={`Increase ${product.name} ${label.toLowerCase()}`}>
             <PlusIcon />
           </button>
@@ -244,7 +244,7 @@ function ProductCard({
 
       {setupIssue && (
         <div class="error-message mb-3" role="alert">
-          Stock values need review. {setupIssue}
+          Stock needs setup. You can still record this sale. {setupIssue}
           {onNeedsSetup && <button class="btn btn-secondary btn-sm mt-2" type="button" onClick={() => onNeedsSetup(product.id)}>Fix in Needs setup</button>}
         </div>
       )}
@@ -587,9 +587,9 @@ function ReviewSaleScreen({
   const subtotalPaise = subtotalResult.ok ? subtotalResult.value : 0;
   const totalPaise = Math.max(0, subtotalPaise - saleDraft.discountPaise);
   const effectiveReceivedPaise = receivedPaise ?? totalPaise;
-  const setupErrors = saleDraft.lines.flatMap((line) => {
+  const setupWarnings = saleDraft.lines.flatMap((line) => {
     const product = products.get(line.productId);
-    if (!product) return [`Product ${line.productId} is no longer available.`];
+    if (!product) return [];
     const issue = getProductSetupIssue(product);
     return issue ? [`${product.name}: ${issue}`] : [];
   });
@@ -617,6 +617,11 @@ function ReviewSaleScreen({
       };
     })
     .filter((item): item is { product: Product; quantity: number; pricePaise: number; setStockAfter: number; lineTotal: number } => item !== null);
+  const blockingError = !subtotalResult.ok
+    ? subtotalResult.error
+    : lineItems.length !== saleDraft.lines.length
+      ? 'One or more sale items are no longer available.'
+      : null;
 
   const handleDiscountChange = (e: Event) => {
     const value = (e.target as HTMLInputElement).value;
@@ -636,6 +641,10 @@ function ReviewSaleScreen({
   };
 
   const handleCompleteSale = async () => {
+    if (blockingError) {
+      setError(blockingError);
+      return;
+    }
     setError(null);
     setIsSubmitting(true);
 
@@ -708,10 +717,16 @@ function ReviewSaleScreen({
 
         <h1 class="text-2xl font-semibold mb-4">Review sale</h1>
 
-        {setupErrors.length > 0 && (
+        {blockingError && (
           <div class="error-message mb-4" role="alert">
-            <div>Stock setup changed while this sale was open. Go back to the items and use Fix in Needs setup.</div>
-            {setupErrors.map((message) => <div key={message} class="mt-1">{message}</div>)}
+            Cannot complete sale: {blockingError} Go back and update the items.
+          </div>
+        )}
+
+        {setupWarnings.length > 0 && (
+          <div class="error-message mb-4" role="alert">
+            <div>Stock needs setup, but you can complete this sale and fix it later in Products.</div>
+            {setupWarnings.map((message) => <div key={message} class="mt-1">{message}</div>)}
           </div>
         )}
 
@@ -868,7 +883,7 @@ function ReviewSaleScreen({
           <button
             class="btn btn-primary btn-lg"
             onClick={handleCompleteSale}
-            disabled={isSubmitting || lineItems.length === 0 || setupErrors.length > 0}
+            disabled={isSubmitting || lineItems.length === 0 || blockingError !== null}
             type="button"
           >
             {isSubmitting ? 'Saving...' : `Complete sale · ${formatInr(totalPaise)}`}

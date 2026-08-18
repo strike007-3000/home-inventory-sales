@@ -1059,12 +1059,9 @@ export function getProductSetupIssue(product: Product): string | null {
 }
 
 export function calculateSetStockAfterSale(product: Product, quantity: number): Result<number> {
-  const setupIssue = getProductSetupIssue(product);
-  if (setupIssue) return Err(`Stock values need review: ${setupIssue}`);
   if (!product.unitsPerSet) return Ok(product.setStockQuantity ?? 0);
   const result = (product.setStockQuantity ?? 0) - quantity / product.unitsPerSet;
-  if (result < -1e-9) return Err('Not enough Stock/set');
-  return Ok(Math.abs(result) <= 1e-9 ? 0 : Number(result.toFixed(12)));
+  return Ok(result <= 1e-9 ? 0 : Number(result.toFixed(12)));
 }
 
 /**
