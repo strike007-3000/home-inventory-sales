@@ -21,6 +21,8 @@ import {
   setRestockLineQuantity,
   calculateSaleSubtotal,
   calculateProportionalLineTotal,
+  calculateSetStockAfterSale,
+  getProductSetupIssue,
   searchProducts,
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABELS,
@@ -151,6 +153,7 @@ interface ProductCardProps {
   maxQuantity?: number;
   onQuantityChange: (quantity: number) => void;
   showAfterQuantity?: number;
+  onNeedsSetup?: (productId: ProductId) => void;
 }
 
 function ProductCard({
@@ -160,6 +163,7 @@ function ProductCard({
   maxQuantity,
   onQuantityChange,
   showAfterQuantity,
+  onNeedsSetup,
 }: ProductCardProps) {
   const isOutOfStock = product.quantity === 0;
   const isSaleQuantity = maxQuantity !== undefined;
@@ -183,6 +187,7 @@ function ProductCard({
   const piecePrice = unitsPerSet ? calculateProportionalLineTotal(product.pricePaise, 1, unitsPerSet) : null;
   const fullSets = unitsPerSet ? Math.floor(quantityInDraft / unitsPerSet) : 0;
   const loosePieces = unitsPerSet ? quantityInDraft % unitsPerSet : quantityInDraft;
+  const setupIssue = isSaleQuantity ? getProductSetupIssue(product) : null;
 
   const quantityControl = (label: string, value: number, step: number, looseOnly = false) => {
     const decreaseTo = looseOnly
@@ -199,7 +204,7 @@ function ProductCard({
           </button>
           <span class="quantity-value">{value}</span>
           <button class="quantity-btn" onClick={() => onQuantityChange(increaseTo)}
-            disabled={(isSaleQuantity && isOutOfStock) || (maxQuantity !== undefined && increaseTo > maxQuantity)}
+            disabled={!!setupIssue || (isSaleQuantity && isOutOfStock) || (maxQuantity !== undefined && increaseTo > maxQuantity)}
             type="button" aria-label={`Increase ${product.name} ${label.toLowerCase()}`}>
             <PlusIcon />
           </button>
@@ -232,10 +237,17 @@ function ProductCard({
           <span class="status-chip status-chip-out-of-stock">Out of stock</span>
         ) : (
           unitsPerSet
-            ? `${product.quantity} pieces · ${product.quantity / unitsPerSet} sets`
+            ? `${product.quantity} pieces · ${product.setStockQuantity ?? 0} sets`
             : `${product.quantity} in stock`
         )}
       </div>
+
+      {setupIssue && (
+        <div class="error-message mb-3" role="alert">
+          Stock values need review. {setupIssue}
+          {onNeedsSetup && <button class="btn btn-secondary btn-sm mt-2" type="button" onClick={() => onNeedsSetup(product.id)}>Fix in Needs setup</button>}
+        </div>
+      )}
 
       {unitsPerSet ? (
         <div class="sale-quantity-options">
@@ -412,9 +424,10 @@ interface SellScreenProps {
   state: InventoryState;
   onSaleDraftChange: (draft: InventoryState['saleDraft']) => void;
   onNavigate: (route: Route) => void;
+  onNeedsSetup: (productId: ProductId) => void;
 }
 
-function SellScreen({ state, onSaleDraftChange, onNavigate }: SellScreenProps) {
+function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup }: SellScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
@@ -497,6 +510,7 @@ function SellScreen({ state, onSaleDraftChange, onNavigate }: SellScreenProps) {
               quantityLabel="Quantity to sell"
               maxQuantity={product.quantity}
               onQuantityChange={(q) => handleQuantityChange(product.id, q)}
+              onNeedsSetup={onNeedsSetup}
             />
           ))
         )}
@@ -573,6 +587,12 @@ function ReviewSaleScreen({
   const subtotalPaise = subtotalResult.ok ? subtotalResult.value : 0;
   const totalPaise = Math.max(0, subtotalPaise - saleDraft.discountPaise);
   const effectiveReceivedPaise = receivedPaise ?? totalPaise;
+  const setupErrors = saleDraft.lines.flatMap((line) => {
+    const product = products.get(line.productId);
+    if (!product) return [`Product ${line.productId} is no longer available.`];
+    const issue = getProductSetupIssue(product);
+    return issue ? [`${product.name}: ${issue}`] : [];
+  });
 
   // Get line items with product details
   const lineItems = saleDraft.lines
@@ -584,12 +604,14 @@ function ReviewSaleScreen({
         ? calculateProportionalLineTotal(pricePaise, line.quantity, product.unitsPerSet)
         : { ok: true as const, value: pricePaise * line.quantity };
       if (!proportional.ok) return null;
+      const setStockResult = calculateSetStockAfterSale(product, line.quantity);
+      if (!setStockResult.ok) return null;
       return {
         product,
         quantity: line.quantity,
         pricePaise,
         setStockAfter: product.unitsPerSet
-          ? (product.quantity - line.quantity) / product.unitsPerSet
+          ? setStockResult.value
           : line.setStockAfter ?? product.setStockQuantity ?? 0,
         lineTotal: proportional.value,
       };
@@ -685,6 +707,13 @@ function ReviewSaleScreen({
         )}
 
         <h1 class="text-2xl font-semibold mb-4">Review sale</h1>
+
+        {setupErrors.length > 0 && (
+          <div class="error-message mb-4" role="alert">
+            <div>Stock setup changed while this sale was open. Go back to the items and use Fix in Needs setup.</div>
+            {setupErrors.map((message) => <div key={message} class="mt-1">{message}</div>)}
+          </div>
+        )}
 
         <div class="card">
           <div class="form-group">
@@ -839,7 +868,7 @@ function ReviewSaleScreen({
           <button
             class="btn btn-primary btn-lg"
             onClick={handleCompleteSale}
-            disabled={isSubmitting || lineItems.length === 0}
+            disabled={isSubmitting || lineItems.length === 0 || setupErrors.length > 0}
             type="button"
           >
             {isSubmitting ? 'Saving...' : `Complete sale · ${formatInr(totalPaise)}`}
@@ -1828,6 +1857,7 @@ export function App() {
   const [state, setState] = useState<InventoryState>(createEmptyInventoryState);
   const [route, setRoute] = useState<Route>('home');
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [openProductsInSetup, setOpenProductsInSetup] = useState(false);
   const [lastCompletedSaleId, setLastCompletedSaleId] = useState<number>(0);
   const [activeSaleIdempotencyKey, setActiveSaleIdempotencyKey] = useState<string>(() => crypto.randomUUID());
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
@@ -1839,6 +1869,12 @@ export function App() {
       ...previous,
       products: new Map(items.map((product) => [product.id, product])),
     }));
+  }, []);
+
+  const openNeedsSetup = useCallback((productId: ProductId) => {
+    setSelectedProductId(productId);
+    setOpenProductsInSetup(true);
+    setRoute('products');
   }, []);
 
   // Auth gate: check session on mount
@@ -1869,8 +1905,10 @@ export function App() {
     setRoute(newRoute as Route);
     if (newRoute === 'products' && productId !== undefined) {
       setSelectedProductId(productId);
+      setOpenProductsInSetup(false);
     } else {
       setSelectedProductId(null);
+      setOpenProductsInSetup(false);
       window.scrollTo(0, 0);
     }
   }, []);
@@ -1910,7 +1948,7 @@ export function App() {
       case 'home':
         return <DashboardScreen state={state} onNavigate={handleNavigate} />;
       case 'sell':
-        return <SellScreen state={state} onSaleDraftChange={handleSaleDraftChange} onNavigate={handleNavigate} />;
+        return <SellScreen state={state} onSaleDraftChange={handleSaleDraftChange} onNavigate={handleNavigate} onNeedsSetup={openNeedsSetup} />;
       case 'sales':
         return <SalesHistoryScreen state={state} onStateChange={setState} onNavigate={handleNavigate} setLastCompletedSaleId={setLastCompletedSaleId} />;
       case 'review-sale':
@@ -1939,7 +1977,7 @@ export function App() {
       case 'cancel-sale-confirm':
         return <CancelSaleConfirmScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
       case 'products':
-        return <ProductList selectedProductId={selectedProductId} onNavigate={handleNavigate} onProductsChanged={refreshProducts} />;
+        return <ProductList initialActiveFilter={openProductsInSetup ? 'setup' : 'active'} selectedProductId={selectedProductId} onNavigate={handleNavigate} onProductsChanged={refreshProducts} />;
       case 'lids':
         return <LidLookup />;
       default:

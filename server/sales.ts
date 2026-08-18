@@ -218,6 +218,12 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     const product = products.get(line.productId);
     if (!product || !product.active) return errorResponse(`Product ${line.productId} is not available`, 404, 'productId');
     if (line.quantity > product.stock_quantity) return errorResponse(`Not enough stock for ${product.name}`, 409, 'quantity');
+    if (!product.units_per_set && (product.stock_quantity > 0 || product.set_stock_quantity > 0)) {
+      return errorResponse(`Pieces per set needs setup for ${product.name}`, 409, 'lines');
+    }
+    if (product.units_per_set && Math.abs(product.set_stock_quantity - product.stock_quantity / product.units_per_set) > 1e-9) {
+      return errorResponse(`Stock values need review for ${product.name}`, 409, 'lines');
+    }
     let lineTotal: number;
     let unitPrice: number;
     let setPrice: number | null = null;
@@ -235,7 +241,9 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
       lineTotal = Number(rounded);
       unitPrice = Math.floor((line.setPricePaise + Math.floor(product.units_per_set / 2)) / product.units_per_set);
       setPrice = line.setPricePaise;
-      setStockAfter = (product.stock_quantity - line.quantity) / product.units_per_set;
+      const nextSetStock = product.set_stock_quantity - line.quantity / product.units_per_set;
+      if (nextSetStock < -1e-9) return errorResponse(`Not enough Stock/set for ${product.name}`, 409, 'quantity');
+      setStockAfter = Math.abs(nextSetStock) <= 1e-9 ? 0 : Number(nextSetStock.toFixed(12));
     } else {
       if (!isNonNegativeMoney(line.unitPricePaise) || !isNonNegativeFinite(line.setStockAfter)) {
         return errorResponse('Unit price and resulting Stock/set are required until pieces per set is configured', 400, 'lines');

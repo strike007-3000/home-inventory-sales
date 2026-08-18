@@ -522,6 +522,8 @@ export function completeSale(
   for (const line of saleDraft.lines) {
     const product = newProducts.get(line.productId);
     if (!product) continue; // Already validated above
+    const setStockResult = calculateSetStockAfterSale(product, line.quantity);
+    if (!setStockResult.ok) return setStockResult;
 
     const setOrUnitPricePaise = line.unitPricePaise ?? product.pricePaise;
     const proportional = product.unitsPerSet
@@ -532,7 +534,7 @@ export function completeSale(
       ? Math.floor((setOrUnitPricePaise + Math.floor(product.unitsPerSet / 2)) / product.unitsPerSet)
       : setOrUnitPricePaise;
     const setStockAfter = product.unitsPerSet
-      ? (product.quantity - line.quantity) / product.unitsPerSet
+      ? setStockResult.value
       : line.setStockAfter ?? product.setStockQuantity ?? 0;
     lineRecords.push({
       productId: product.id,
@@ -616,6 +618,8 @@ export function cancelSale(
       newProducts.set(line.productId, {
         ...product,
         quantity: product.quantity + line.quantity,
+        setStockQuantity: (product.setStockQuantity ?? 0) +
+          (line.setStockBefore ?? 0) - (line.setStockAfter ?? 0),
       });
     }
   }
@@ -1039,8 +1043,28 @@ export function deriveSetStock(quantity: number, unitsPerSet: number): Result<nu
 }
 
 export function needsUnitsPerSetConfiguration(product: Product): boolean {
-  return product.active && !product.unitsPerSet &&
-    (product.quantity > 0 || (product.setStockQuantity ?? 0) > 0);
+  return getProductSetupIssue(product) !== null;
+}
+
+export function getProductSetupIssue(product: Product): string | null {
+  if (!product.active) return null;
+  const setStock = product.setStockQuantity ?? 0;
+  if (!product.unitsPerSet) {
+    return product.quantity > 0 || setStock > 0 ? 'Pieces per set is missing.' : null;
+  }
+  const expected = product.quantity / product.unitsPerSet;
+  return Math.abs(setStock - expected) > 1e-9
+    ? `${product.quantity} piece${product.quantity === 1 ? '' : 's'} should equal ${expected} set${expected === 1 ? '' : 's'}, but Stock/set is ${setStock}.`
+    : null;
+}
+
+export function calculateSetStockAfterSale(product: Product, quantity: number): Result<number> {
+  const setupIssue = getProductSetupIssue(product);
+  if (setupIssue) return Err(`Stock values need review: ${setupIssue}`);
+  if (!product.unitsPerSet) return Ok(product.setStockQuantity ?? 0);
+  const result = (product.setStockQuantity ?? 0) - quantity / product.unitsPerSet;
+  if (result < -1e-9) return Err('Not enough Stock/set');
+  return Ok(Math.abs(result) <= 1e-9 ? 0 : Number(result.toFixed(12)));
 }
 
 /**
