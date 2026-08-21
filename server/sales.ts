@@ -247,7 +247,8 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
       lineTotal = Number(rounded);
       unitPrice = Math.floor((setP + Math.floor(product.units_per_set / 2)) / product.units_per_set);
       setPrice = setP;
-      setStockAfter = (product.stock_quantity - line.quantity) / product.units_per_set;
+      const nextSetStock = product.set_stock_quantity - line.quantity / product.units_per_set;
+      setStockAfter = nextSetStock <= 1e-9 ? 0 : Number(nextSetStock.toFixed(12));
     } else {
       const unitP = isGift ? (line.unitPricePaise ?? 0) : line.unitPricePaise;
       if (!isNonNegativeMoney(unitP) || !isNonNegativeFinite(line.setStockAfter)) {

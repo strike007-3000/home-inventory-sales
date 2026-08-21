@@ -13,8 +13,8 @@ interface ProductFormProps {
   onChangeStock?: () => void;
 }
 
-function rupeesValue(paise: number | null): string {
-  return paise !== null ? (paise / 100).toFixed(2) : '';
+export function formatRupeesInput(paise: number | null): string {
+  return paise !== null ? String(paise / 100) : '';
 }
 
 function parseRupees(value: string): number | null {
@@ -50,6 +50,10 @@ export function ProductForm({
   }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [priceText, setPriceText] = useState(() => ({
+    pricePaise: formatRupeesInput(initialData?.pricePaise ?? 0),
+    mrpPaise: formatRupeesInput(initialData?.mrpPaise ?? null),
+  }));
 
   const setField = <K extends keyof ProductFormData>(field: K, value: ProductFormData[K]) => {
     setFormData((previous) => ({ ...previous, [field]: value }));
@@ -118,7 +122,9 @@ export function ProductForm({
     label: string,
     field: 'pricePaise' | 'mrpPaise' | 'consultantPricePaise',
     required = false,
-  ) => (
+  ) => {
+    const keepRawText = field === 'pricePaise' || field === 'mrpPaise';
+    return (
     <div class="form-group">
       <label class="form-label" for={id}>
         {label} (₹){required ? <span class="required-asterisk">*</span> : ''}
@@ -127,18 +133,29 @@ export function ProductForm({
         id={id}
         type="number"
         class={`form-input ${errors[field] ? 'form-input-error' : ''}`}
-        value={rupeesValue(formData[field])}
-        onInput={(event) => setField(field, parseRupees((event.target as HTMLInputElement).value))}
+        value={keepRawText ? priceText[field] : formatRupeesInput(formData[field])}
+        onInput={(event) => {
+          const value = (event.target as HTMLInputElement).value;
+          if (keepRawText) setPriceText((previous) => ({ ...previous, [field]: value }));
+          setField(field, parseRupees(value));
+        }}
+        onFocus={(event) => {
+          if (keepRawText) (event.target as HTMLInputElement).select();
+        }}
+        onBlur={() => {
+          if (keepRawText) setPriceText((previous) => ({ ...previous, [field]: formatRupeesInput(formData[field]) }));
+        }}
         min="0"
         step="0.01"
         inputMode="decimal"
-        placeholder="0.00"
+        placeholder="0"
         required={required}
         disabled={loading}
       />
       {errors[field] && <span class="text-error text-sm mt-1 block">{errors[field]}</span>}
     </div>
-  );
+    );
+  };
 
   return (
     <form class="card" onSubmit={handleSubmit}>
