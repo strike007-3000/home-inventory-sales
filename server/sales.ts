@@ -285,8 +285,8 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
   const batch: D1PreparedStatement[] = [
     env.DB.prepare(
       `INSERT INTO sales (sale_number, sold_at, sale_date, customer_name, is_gift, subtotal_minor, discount_minor, total_minor, status, payment_method, idempotency_key)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ? WHERE ${guards}`,
-    ).bind(saleNumber, now, body.saleDate, customerName, isGift ? 1 : 0, subtotal, effectiveDiscount, total, paymentMethod, key, ...guardValues),
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${guards}`,
+    ).bind(saleNumber, now, body.saleDate, customerName, isGift ? 1 : 0, subtotal, effectiveDiscount, total, 'completed', paymentMethod, key, ...guardValues),
   ];
   if (!isGift && effectiveReceived > 0) {
     batch.push(env.DB.prepare(
