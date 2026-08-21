@@ -7,6 +7,7 @@ import { beforeEach } from 'vitest';
 beforeEach(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   await env.DB.batch([
+    env.DB.prepare('DELETE FROM sale_payment_corrections'),
     env.DB.prepare('DELETE FROM sale_payments'),
     env.DB.prepare('DELETE FROM sale_items'),
     env.DB.prepare('DELETE FROM sale_cancellations'),

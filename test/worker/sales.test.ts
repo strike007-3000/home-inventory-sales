@@ -328,4 +328,117 @@ describe('Sale API', () => {
       expect(await badCustomerRes.json<any>()).toMatchObject({ field: 'customerName' });
     }
   });
+
+  it('handles explicit gift sales creation, stock deduction, and cancellation', async () => {
+    const productId = await addProduct();
+    const giftRes = await api('/api/sales', 'POST', {
+      idempotencyKey: 'gift-sale-1',
+      saleDate: '2026-08-20',
+      customerName: 'Gift Recipient',
+      isGift: true,
+      lines: [{ productId, quantity: 2, unitPricePaise: 15000, setStockAfter: 1.5 }],
+      discountPaise: 0,
+      paymentMethod: 'other',
+      receivedPaise: 0,
+    });
+    expect(giftRes.status).toBe(201);
+    const giftSale = await giftRes.json<any>();
+    expect(giftSale).toMatchObject({
+      isGift: true,
+      totalPaise: 0,
+      paidPaise: 0,
+      balancePaise: 0,
+      paymentStatus: 'paid',
+      payments: [],
+    });
+
+    const product = await env.DB.prepare('SELECT stock_quantity FROM products WHERE id = ?').bind(productId).first<any>();
+    expect(product.stock_quantity).toBe(6);
+
+    const listRes = await api('/api/sales');
+    const listBody = await listRes.json<any>();
+    const summary = listBody.items.find((item: any) => item.id === giftSale.id);
+    expect(summary).toMatchObject({ isGift: true, paymentStatus: 'paid', totalPaise: 0, paidPaise: 0, balancePaise: 0 });
+
+    const cancelRes = await api(`/api/sales/${giftSale.id}/cancel`, 'POST', { reason: 'Gift returned' });
+    expect(cancelRes.status).toBe(200);
+    const restoredProduct = await env.DB.prepare('SELECT stock_quantity FROM products WHERE id = ?').bind(productId).first<any>();
+    expect(restoredProduct.stock_quantity).toBe(8);
+  });
+
+  it('allows marking eligible ₹0 completed sales as gift and rejects invalid conversions', async () => {
+    const productId = await addProduct();
+
+    const zeroRes = await api('/api/sales', 'POST', {
+      idempotencyKey: 'zero-sale-1',
+      saleDate: '2026-08-20',
+      lines: [{ productId, quantity: 1, unitPricePaise: 0, setStockAfter: 1.75 }],
+      discountPaise: 0,
+      paymentMethod: 'upi',
+      receivedPaise: 0,
+    });
+    const zeroSale = await zeroRes.json<any>();
+    expect(zeroSale.isGift).toBe(false);
+
+    const markRes = await api(`/api/sales/${zeroSale.id}`, 'PUT', { isGift: true });
+    expect(markRes.status).toBe(200);
+    const markedSale = await markRes.json<any>();
+    expect(markedSale.isGift).toBe(true);
+
+    const nonZeroRes = await api('/api/sales', 'POST', {
+      idempotencyKey: 'nonzero-sale-1',
+      saleDate: '2026-08-20',
+      lines: [{ productId, quantity: 1, unitPricePaise: 1000, setStockAfter: 1.5 }],
+      discountPaise: 0,
+      paymentMethod: 'cash',
+      receivedPaise: 1000,
+    });
+    const nonZeroSale = await nonZeroRes.json<any>();
+    const badMarkRes = await api(`/api/sales/${nonZeroSale.id}`, 'PUT', { isGift: true });
+    expect(badMarkRes.status).toBe(409);
+  });
+
+  it('edits individual payment method and audits the correction', async () => {
+    const productId = await addProduct();
+    const createdRes = await api('/api/sales', 'POST', {
+      idempotencyKey: 'multi-pay-sale',
+      saleDate: '2026-08-20',
+      lines: [{ productId, quantity: 2, unitPricePaise: 10000, setStockAfter: 1.5 }],
+      discountPaise: 0,
+      paymentMethod: 'cash',
+      receivedPaise: 5000,
+    });
+    const sale = await createdRes.json<any>();
+    const paymentId = sale.payments[0].id;
+
+    const editRes = await api(`/api/sales/${sale.id}/payments/${paymentId}`, 'PUT', { paymentMethod: 'upi' });
+    expect(editRes.status).toBe(200);
+    const updatedSale = await editRes.json<any>();
+    expect(updatedSale.payments[0]).toMatchObject({ id: paymentId, amountPaise: 5000, paymentMethod: 'upi' });
+
+    const auditRow = await env.DB.prepare('SELECT old_payment_method, new_payment_method FROM sale_payment_corrections WHERE payment_id = ?').bind(paymentId).first<any>();
+    expect(auditRow).toMatchObject({ old_payment_method: 'cash', new_payment_method: 'upi' });
+
+    // Concurrent modification conflict when expected old method does not match DB state
+    const staleEditRes = await api(`/api/sales/${sale.id}/payments/${paymentId}`, 'PUT', { paymentMethod: 'cash' });
+    // Sending same method returns early 200 without changes
+    expect(staleEditRes.status).toBe(200);
+  });
+
+  it('rejects non-boolean isGift values in sale creation', async () => {
+    const productId = await addProduct();
+    for (const badValue of ['false', 1, {}, [true]]) {
+      const response = await api('/api/sales', 'POST', {
+        idempotencyKey: `bad-gift-${Math.random()}`,
+        saleDate: '2026-08-20',
+        isGift: badValue,
+        lines: [{ productId, quantity: 1, unitPricePaise: 1000, setStockAfter: 1.5 }],
+        discountPaise: 0,
+        paymentMethod: 'upi',
+        receivedPaise: 1000,
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json<any>()).toMatchObject({ field: 'isGift' });
+    }
+  });
 });

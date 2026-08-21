@@ -363,6 +363,48 @@ button.card { font: inherit; color: inherit; }
   .product-actions .product-toggle { grid-column: auto; }
 }
 
+.status-chip-purple { color: #7e22ce; background: #f3e8ff; }
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .app {
+    padding: 0 !important;
+  }
+  .top-header-bar,
+  .nav,
+  .sticky-action,
+  .non-printable,
+  button,
+  .sales-search-form,
+  .sales-filter-pills {
+    display: none !important;
+  }
+  .main {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .card {
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    margin-bottom: 12px !important;
+    background: #ffffff !important;
+  }
+  .printable-region {
+    display: block !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -27,13 +27,15 @@ Home Inventory helps one or two family members run a small home inventory busine
    Products missing Pieces in one set can be found through the **Needs setup** filter and updated with **Edit details**.
 2. Change a product's individual QTY and Stock/set together with an audit reason and optional note.
 3. Receive, physically count, or correct stock through dedicated stock tasks.
-4. Record a sale in whole sets, loose pieces, or both. Set-priced CP, SRP, and MRP values are divided proportionally by Pieces in one set.
+4. Record a sale in whole sets, loose pieces, or both. Set-priced CP, SRP, and MRP values are divided proportionally by Pieces in one set. Option to mark as explicit Gift sale (no payment due, stock deducted, recipient name).
    Record a sale displays both saved stock values and subtracts sold pieces proportionally from each, clamping Stock/set at zero; it warns about setup issues without blocking the sale or silently replacing the saved value.
 5. Go back to adjust a draft sale or explicitly discard it before stock changes.
-6. Correct a recorded sale's customer name or sale date without changing its items, money, payments, stock, or original recorded time.
-7. Leave a sale unpaid or partially paid and record later payments.
-8. Search older sales and cancel an incorrect sale, reversing stock.
-9. Look up LIDS market prices separately.
+6. Correct a recorded sale's customer/recipient name or sale date without changing its items, money, payments, stock, or original recorded time. Explicitly mark an existing ₹0/no-payment completed sale as Gift.
+7. Correct individual payment methods independently (`PUT /api/sales/:saleId/payments/:paymentId`) with audit records saved in `sale_payment_corrections`.
+8. Leave a sale unpaid or partially paid and record later payments.
+9. Search older sales and cancel an incorrect sale, reversing stock (including gift sales).
+10. Print or save PDF for any sale details page (`window.print()`) with clean layouts for ordinary and gift sales.
+11. Look up LIDS market prices separately.
 
 ## Product principles
 

@@ -6,6 +6,10 @@ Migration `0008_units_per_set.sql` infers Pieces in one set only when the existi
 
 Use Products → **Needs setup** to list the same active products counted by the Dashboard warning. Each result can be corrected through **Edit details**.
 
+## Gift sales and payment corrections migration
+
+Migration `0009_gift_sales_and_payment_corrections.sql` adds `is_gift` (defaulting to 0/false) to existing sales without reclassifying any existing records. It also creates the `sale_payment_corrections` audit table for per-payment method corrections.
+
 ## Dependency updates
 
 Dependabot checks npm dependencies twice monthly, on the 1st and 16th, using `.github/dependabot.yml`. Vulnerability alerts and automatic security-update pull requests remain enabled in the repository security settings.
