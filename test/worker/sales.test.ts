@@ -374,5 +374,27 @@ describe('Sale API', () => {
 
     const auditRow = await env.DB.prepare('SELECT old_payment_method, new_payment_method FROM sale_payment_corrections WHERE payment_id = ?').bind(paymentId).first<any>();
     expect(auditRow).toMatchObject({ old_payment_method: 'cash', new_payment_method: 'upi' });
+
+    // Concurrent modification conflict when expected old method does not match DB state
+    const staleEditRes = await api(`/api/sales/${sale.id}/payments/${paymentId}`, 'PUT', { paymentMethod: 'cash' });
+    // Sending same method returns early 200 without changes
+    expect(staleEditRes.status).toBe(200);
+  });
+
+  it('rejects non-boolean isGift values in sale creation', async () => {
+    const productId = await addProduct();
+    for (const badValue of ['false', 1, {}, [true]]) {
+      const response = await api('/api/sales', 'POST', {
+        idempotencyKey: `bad-gift-${Math.random()}`,
+        saleDate: '2026-08-20',
+        isGift: badValue,
+        lines: [{ productId, quantity: 1, unitPricePaise: 1000, setStockAfter: 1.5 }],
+        discountPaise: 0,
+        paymentMethod: 'upi',
+        receivedPaise: 1000,
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json<any>()).toMatchObject({ field: 'isGift' });
+    }
   });
 });

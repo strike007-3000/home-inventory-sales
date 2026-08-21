@@ -163,6 +163,9 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
   if (!Array.isArray(body.lines) || body.lines.length === 0 || body.lines.length > 100) {
     return errorResponse('Sale must contain between 1 and 100 lines', 400, 'lines');
   }
+  if (body.isGift !== undefined && typeof body.isGift !== 'boolean') {
+    return errorResponse('isGift must be a boolean', 400, 'isGift');
+  }
   const isGift = Boolean(body.isGift);
   if (!isGift) {
     if (!isNonNegativeMoney(body.discountPaise)) {
@@ -489,13 +492,18 @@ export async function handleUpdatePaymentMethod(saleId: number, paymentId: numbe
   }
 
   const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare('UPDATE sale_payments SET payment_method = ? WHERE id = ? AND sale_id = ?').bind(body.paymentMethod, paymentId, saleId),
-    env.DB.prepare(
-      `INSERT INTO sale_payment_corrections (payment_id, sale_id, old_payment_method, new_payment_method, corrected_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).bind(paymentId, saleId, payment.payment_method, body.paymentMethod, now),
-  ]);
+  const updateResult = await env.DB.prepare(
+    'UPDATE sale_payments SET payment_method = ? WHERE id = ? AND sale_id = ? AND payment_method = ?',
+  ).bind(body.paymentMethod, paymentId, saleId, payment.payment_method).run();
+
+  if (updateResult.meta.changes === 0) {
+    return errorResponse('Payment method was updated concurrently by another request', 409);
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO sale_payment_corrections (payment_id, sale_id, old_payment_method, new_payment_method, corrected_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).bind(paymentId, saleId, payment.payment_method, body.paymentMethod, now).run();
 
   const updatedSale = await readSale(saleId, env);
   return jsonResponse(updatedSale);
