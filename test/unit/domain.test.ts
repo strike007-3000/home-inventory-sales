@@ -90,7 +90,7 @@ describe('validateSaleDiscount', () => {
 
 describe('Sale draft operations', () => {
   it('sets and gets sale line quantity', () => {
-    let draft: SaleDraft = { lines: [], discountPaise: 0, paymentMethod: 'upi' };
+    let draft: SaleDraft = { lines: [], discountPaise: 0, paymentMethod: 'upi', isGift: false };
 
     draft = setSaleLineQuantity(draft, 1, 3);
     expect(getSaleLineQuantity(draft, 1)).toBe(3);
@@ -104,7 +104,7 @@ describe('Sale draft operations', () => {
   });
 
   it('handles multiple products in draft', () => {
-    let draft: SaleDraft = { lines: [], discountPaise: 0, paymentMethod: 'upi' };
+    let draft: SaleDraft = { lines: [], discountPaise: 0, paymentMethod: 'upi', isGift: false };
 
     draft = setSaleLineQuantity(draft, 1, 2);
     draft = setSaleLineQuantity(draft, 2, 3);
@@ -119,9 +119,10 @@ describe('Sale draft operations', () => {
       lines: [{ productId: 1, quantity: 3, unitPricePaise: 12500, setStockAfter: 2 }],
       discountPaise: 500,
       paymentMethod: 'cash',
+      isGift: false,
     };
 
-    expect(clearSaleDraft(draft)).toEqual({ lines: [], discountPaise: 0, paymentMethod: 'upi' });
+    expect(clearSaleDraft(draft)).toEqual({ lines: [], discountPaise: 0, paymentMethod: 'upi', isGift: false });
   });
 });
 
@@ -151,6 +152,7 @@ describe('calculateSaleSubtotal', () => {
       ],
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     const result = calculateSaleSubtotal(draft, state.products);
@@ -169,6 +171,7 @@ describe('calculateSaleSubtotal', () => {
       lines: [],
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     const result = calculateSaleSubtotal(draft, state.products);
@@ -184,6 +187,7 @@ describe('calculateSaleSubtotal', () => {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 100 }], // Only 12 in stock
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     const result = calculateSaleSubtotal(draft, state.products);
@@ -196,6 +200,7 @@ describe('calculateSaleSubtotal', () => {
       lines: [{ productId: PRODUCT_IDS.WATER_BOTTLE_RED, quantity: 1 }], // Out of stock (0)
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     const result = calculateSaleSubtotal(draft, state.products);
@@ -208,6 +213,7 @@ describe('calculateSaleSubtotal', () => {
       lines: [{ productId: PRODUCT_IDS.SAMPLE_GIFT_ITEM, quantity: 3 }], // ₹0 price
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     const result = calculateSaleSubtotal(draft, state.products);
@@ -231,6 +237,7 @@ describe('completeSale', () => {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 2 }],
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     const stateWithDraft = { ...state, saleDraft: draft };
@@ -257,6 +264,7 @@ describe('completeSale', () => {
       lines: [],
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     const stateWithDraft = { ...state, saleDraft: draft };
@@ -275,6 +283,7 @@ describe('completeSale', () => {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 100 }], // Way more than available
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     const stateWithDraft = { ...state, saleDraft: draft };
@@ -299,6 +308,7 @@ describe('completeSale', () => {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_GREEN, quantity }],
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     const stateWithDraft = { ...state, saleDraft: draft };
@@ -318,6 +328,7 @@ describe('completeSale', () => {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 2 }],
       discountPaise: 10000, // ₹100 discount
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     const stateWithDraft = { ...state, saleDraft: draft };
@@ -349,6 +360,7 @@ describe('cancelSale', () => {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 2 }],
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     state = { ...state, saleDraft: draft };
@@ -384,6 +396,7 @@ describe('cancelSale', () => {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 1 }],
       discountPaise: 0,
       paymentMethod: 'upi' as const,
+      isGift: false,
     };
 
     state = { ...state, saleDraft: draft };
@@ -627,6 +640,7 @@ describe('Idempotency', () => {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 1 }],
       discountPaise: 0,
       paymentMethod: 'upi',
+      isGift: false,
     };
 
     const first = completeSale({ ...state, saleDraft: draft }, idempotencyKey);
@@ -647,6 +661,7 @@ describe('Idempotency', () => {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 1 }],
       discountPaise: 0,
       paymentMethod: 'upi',
+      isGift: false,
     };
 
     const first = completeSale({ ...state, saleDraft: draft }, 'key-a');
@@ -669,6 +684,7 @@ describe('Quantity edge cases', () => {
       lines: [{ productId: PRODUCT_IDS.LUNCH_BOX_BLUE, quantity: 1.5 }],
       discountPaise: 0,
       paymentMethod: 'upi',
+      isGift: false,
     };
 
     const result = calculateSaleSubtotal(draft, state.products);
@@ -731,6 +747,7 @@ describe('Kolkata time behavior', () => {
       discountPaise: 0,
       totalPaise: 49900,
       paymentMethod: 'upi' as const,
+      isGift: false,
       status: 'completed' as const,
     };
 

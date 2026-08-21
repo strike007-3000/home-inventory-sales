@@ -26,7 +26,7 @@ import {
 } from './products';
 import { handleStockDelivery, handleStockCount, handleStockAdjustment, handleStockChange } from './stock';
 import { handleImportPreview, handleImportCommit } from './import';
-import { handleCancelSale, handleCreateSale, handleGetSale, handleListSales, handleRecordPayment, handleUpdateSale } from './sales';
+import { handleCancelSale, handleCreateSale, handleGetSale, handleListSales, handleRecordPayment, handleUpdatePaymentMethod, handleUpdateSale } from './sales';
 import { handleListLids } from './lids';
 
 export default {
@@ -158,6 +158,15 @@ async function routeApi(
   }
   if (path === '/sales' && method === 'GET') {
     return handleListSales(url, env);
+  }
+  const paymentMatch = path.match(/^\/sales\/(\d+)\/payments\/(\d+)$/);
+  if (paymentMatch && method === 'PUT') {
+    const saleId = Number(paymentMatch[1]);
+    const paymentId = Number(paymentMatch[2]);
+    if (!Number.isSafeInteger(saleId) || saleId <= 0 || !Number.isSafeInteger(paymentId) || paymentId <= 0) {
+      return errorResponse('Invalid sale ID or payment ID', 400);
+    }
+    return handleUpdatePaymentMethod(saleId, paymentId, request, env);
   }
   const saleMatch = path.match(/^\/sales\/(\d+)(\/(cancel|payments))?$/);
   const saleId = saleMatch ? Number(saleMatch[1]) : null;

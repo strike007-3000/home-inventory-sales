@@ -53,6 +53,7 @@ export interface SaleDraft {
   readonly lines: readonly SaleLine[];
   readonly discountPaise: number;
   readonly paymentMethod: PaymentMethod;
+  readonly isGift: boolean;
 }
 
 export interface SaleLineRecord {
@@ -73,6 +74,7 @@ export interface SaleRecord {
   readonly soldAt: string;
   readonly saleDate?: string;
   readonly customerName?: string | null;
+  readonly isGift: boolean;
   readonly lines: readonly SaleLineRecord[];
   readonly subtotalPaise: number;
   readonly discountPaise: number;
@@ -172,7 +174,15 @@ export const EMPTY_SALE_DRAFT: SaleDraft = {
   lines: [],
   discountPaise: 0,
   paymentMethod: 'upi',
+  isGift: false,
 } as const;
+
+/**
+ * Set isGift in the sale draft.
+ */
+export function setSaleIsGift(draft: SaleDraft, isGift: boolean): SaleDraft {
+  return { ...draft, isGift };
+}
 
 // ============================================================================
 // Timezone utilities
@@ -563,6 +573,7 @@ export function completeSale(
     discountPaise: saleDraft.discountPaise,
     totalPaise,
     paymentMethod: saleDraft.paymentMethod,
+    isGift: saleDraft.isGift,
     status: 'completed',
   };
 
