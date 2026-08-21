@@ -234,7 +234,10 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     let setPrice: number | null = null;
     let setStockAfter: number;
     if (product.units_per_set) {
-      const setP = isGift ? (line.setPricePaise ?? 0) : line.setPricePaise;
+      let setP = isGift ? (line.setPricePaise ?? 0) : line.setPricePaise;
+      if (setP === undefined && isNonNegativeMoney(line.unitPricePaise)) {
+        setP = line.unitPricePaise * product.units_per_set;
+      }
       if (!isNonNegativeMoney(setP)) {
         return errorResponse('Set price is required for configured products', 400, 'setPricePaise');
       }
