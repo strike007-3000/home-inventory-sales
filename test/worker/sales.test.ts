@@ -366,6 +366,79 @@ describe('Sale API', () => {
     expect(restoredProduct.stock_quantity).toBe(8);
   });
 
+  it('handles configured Gift products with setPricePaise', async () => {
+    const productId = await addConfiguredBottle();
+    const giftRes = await api('/api/sales', 'POST', {
+      idempotencyKey: 'configured-gift-set-price',
+      saleDate: '2026-08-20',
+      isGift: true,
+      lines: [{ productId, quantity: 4, setPricePaise: 66000 }],
+      discountPaise: 0,
+      paymentMethod: 'other',
+      receivedPaise: 0,
+    });
+    expect(giftRes.status).toBe(201);
+    const giftSale = await giftRes.json<any>();
+    expect(giftSale).toMatchObject({
+      isGift: true,
+      totalPaise: 0,
+      paidPaise: 0,
+      balancePaise: 0,
+      paymentStatus: 'paid',
+      payments: [],
+      lines: [{ quantity: 4, lineTotalPaise: 66000, unitsPerSet: 4, setPricePaise: 66000, setStockAfter: 2.5 }],
+    });
+    const product = await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?').bind(productId).first<any>();
+    expect(product).toMatchObject({ stock_quantity: 10, set_stock_quantity: 2.5 });
+  });
+
+  it('handles configured Gift products with unitPricePaise fallback', async () => {
+    const productId = await addConfiguredBottle();
+    const giftRes = await api('/api/sales', 'POST', {
+      idempotencyKey: 'configured-gift-unit-price',
+      saleDate: '2026-08-20',
+      isGift: true,
+      lines: [{ productId, quantity: 4, unitPricePaise: 16500 }],
+      discountPaise: 0,
+      paymentMethod: 'other',
+      receivedPaise: 0,
+    });
+    expect(giftRes.status).toBe(201);
+    const giftSale = await giftRes.json<any>();
+    expect(giftSale).toMatchObject({
+      isGift: true,
+      totalPaise: 0,
+      paidPaise: 0,
+      balancePaise: 0,
+      paymentStatus: 'paid',
+      payments: [],
+      lines: [{ quantity: 4, lineTotalPaise: 66000, unitsPerSet: 4, setPricePaise: 66000, setStockAfter: 2.5 }],
+    });
+    const product = await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?').bind(productId).first<any>();
+    expect(product).toMatchObject({ stock_quantity: 10, set_stock_quantity: 2.5 });
+  });
+
+  it('uses a zero price fallback for configured Gift products without price', async () => {
+    const productId = await addConfiguredBottle();
+    const giftRes = await api('/api/sales', 'POST', {
+      idempotencyKey: 'configured-gift-no-price',
+      saleDate: '2026-08-20',
+      isGift: true,
+      lines: [{ productId, quantity: 4 }],
+      discountPaise: 0,
+      paymentMethod: 'other',
+      receivedPaise: 0,
+    });
+    expect(giftRes.status).toBe(201);
+    expect(await giftRes.json<any>()).toMatchObject({
+      isGift: true,
+      totalPaise: 0,
+      lines: [{ quantity: 4, lineTotalPaise: 0, setPricePaise: 0, setStockAfter: 2.5 }],
+    });
+    expect(await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?').bind(productId).first<any>())
+      .toMatchObject({ stock_quantity: 10, set_stock_quantity: 2.5 });
+  });
+
   it('allows marking eligible ₹0 completed sales as gift and rejects invalid conversions', async () => {
     const productId = await addProduct();
 
@@ -440,5 +513,38 @@ describe('Sale API', () => {
       expect(response.status).toBe(400);
       expect(await response.json<any>()).toMatchObject({ field: 'isGift' });
     }
+  });
+
+  it('rolls back a payment method correction when its audit insert fails', async () => {
+    const productId = await addProduct();
+    const createdRes = await api('/api/sales', 'POST', {
+      idempotencyKey: 'atomic-correction-test',
+      saleDate: '2026-08-20',
+      lines: [{ productId, quantity: 2, unitPricePaise: 10000, setStockAfter: 1.5 }],
+      discountPaise: 0,
+      paymentMethod: 'cash',
+      receivedPaise: 5000,
+    });
+    const sale = await createdRes.json<any>();
+    const paymentId = sale.payments[0].id;
+
+    await env.DB.prepare(
+      `CREATE TRIGGER fail_payment_correction
+       BEFORE INSERT ON sale_payment_corrections
+       BEGIN
+         SELECT RAISE(ABORT, 'forced audit failure');
+       END`,
+    ).run();
+    try {
+      const editRes = await api(`/api/sales/${sale.id}/payments/${paymentId}`, 'PUT', { paymentMethod: 'upi' });
+      expect(editRes.status).toBe(500);
+    } finally {
+      await env.DB.prepare('DROP TRIGGER fail_payment_correction').run();
+    }
+
+    expect(await env.DB.prepare('SELECT payment_method FROM sale_payments WHERE id = ?').bind(paymentId).first<any>())
+      .toMatchObject({ payment_method: 'cash' });
+    expect(await env.DB.prepare('SELECT id FROM sale_payment_corrections WHERE payment_id = ?').bind(paymentId).first<any>())
+      .toBeNull();
   });
 });

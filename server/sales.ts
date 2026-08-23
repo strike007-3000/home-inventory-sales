@@ -234,9 +234,12 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     let setPrice: number | null = null;
     let setStockAfter: number;
     if (product.units_per_set) {
-      let setP = isGift ? (line.setPricePaise ?? 0) : line.setPricePaise;
+      let setP = line.setPricePaise;
       if (setP === undefined && isNonNegativeMoney(line.unitPricePaise)) {
         setP = line.unitPricePaise * product.units_per_set;
+      }
+      if (setP === undefined && isGift) {
+        setP = 0;
       }
       if (!isNonNegativeMoney(setP)) {
         return errorResponse('Set price is required for configured products', 400, 'setPricePaise');
@@ -496,18 +499,20 @@ export async function handleUpdatePaymentMethod(saleId: number, paymentId: numbe
   }
 
   const now = new Date().toISOString();
-  const updateResult = await env.DB.prepare(
-    'UPDATE sale_payments SET payment_method = ? WHERE id = ? AND sale_id = ? AND payment_method = ?',
-  ).bind(body.paymentMethod, paymentId, saleId, payment.payment_method).run();
 
-  if (updateResult.meta.changes === 0) {
+  const result = await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE sale_payments SET payment_method = ? WHERE id = ? AND sale_id = ? AND payment_method = ?',
+    ).bind(body.paymentMethod, paymentId, saleId, payment.payment_method),
+    env.DB.prepare(
+      `INSERT INTO sale_payment_corrections (payment_id, sale_id, old_payment_method, new_payment_method, corrected_at)
+       SELECT ?, ?, ?, ?, ? WHERE changes() = 1`,
+    ).bind(paymentId, saleId, payment.payment_method, body.paymentMethod, now),
+  ]);
+
+  if ((result[0]?.meta.changes ?? 0) === 0) {
     return errorResponse('Payment method was updated concurrently by another request', 409);
   }
-
-  await env.DB.prepare(
-    `INSERT INTO sale_payment_corrections (payment_id, sale_id, old_payment_method, new_payment_method, corrected_at)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).bind(paymentId, saleId, payment.payment_method, body.paymentMethod, now).run();
 
   const updatedSale = await readSale(saleId, env);
   return jsonResponse(updatedSale);

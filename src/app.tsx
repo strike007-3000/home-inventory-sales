@@ -922,7 +922,7 @@ function ReviewSaleScreen({
             disabled={isSubmitting || lineItems.length === 0 || blockingError !== null}
             type="button"
           >
-            {isSubmitting ? 'Saving...' : `Complete sale · ${formatInr(totalPaise)}`}
+            {isSubmitting ? 'Saving...' : (saleDraft.isGift ? 'Complete gift · ₹0' : `Complete sale · ${formatInr(totalPaise)}`)}
           </button>
         </div>
       </div>
@@ -1731,15 +1731,15 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
         <div class="printable-region">
           <div class="sale-detail-header mb-2">
             <div>
-              <h1 class="text-2xl font-semibold">Home Inventory</h1>
-              <div class="text-lg font-medium text-ink-light">Sale #{sale.saleNumber}</div>
+              <h1 class="text-2xl font-semibold">Sale receipt</h1>
+              <div class="text-sm text-ink-light">Receipt no. {sale.saleNumber}</div>
               <div class="mt-1">
                 {sale.status === 'cancelled' ? (
                   <span class="status-chip status-chip-out-of-stock">Cancelled</span>
                 ) : sale.isGift ? (
                   <span class="status-chip status-chip-purple">Gift</span>
                 ) : sale.paymentStatus === 'paid' ? (
-                  <span class="status-chip status-chip-success">Paid</span>
+                  <span class="status-chip status-chip-success">Paid in full</span>
                 ) : sale.paymentStatus === 'partial' ? (
                   <span class="status-chip status-chip-warning">Partially paid</span>
                 ) : (
@@ -1804,21 +1804,27 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
           ) : (
             <p class="text-sm text-ink-light mb-4">
               {sale.customerName && <>{sale.isGift ? 'Recipient' : 'Customer'}: {sale.customerName}<br /></>}
-              Sale date: {new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}<br />
-              Recorded: {new Date(sale.soldAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+              Sale date: {new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
+              <span class="non-printable"><br />Recorded: {new Date(sale.soldAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
             </p>
           )}
 
           {/* Items section */}
-          <div class="card mb-4">
+          <div class="card mb-4 receipt-items-card">
             <h2 class="text-md font-semibold mb-3">{sale.isGift ? 'Gifted items' : 'Items'}</h2>
+            <div class={`receipt-item-head ${sale.isGift ? 'receipt-item-head-gift' : ''}`} aria-hidden="true">
+              <span>Item</span>
+              <span class="receipt-number-cell">Qty</span>
+              {!sale.isGift && <><span class="receipt-number-cell">Unit price</span><span class="receipt-number-cell">Amount</span></>}
+            </div>
             {sale.lines.map((line) => (
-              <div key={`${line.productId}-${line.quantity}`} class="flex justify-between py-2 border-b border-line last:border-b-0">
-                <div>
-                  <div class="font-semibold">{line.productName}</div>
-                  <div class="text-sm text-ink-light">Qty: {line.quantity}</div>
-                </div>
-                {!sale.isGift && <div class="font-semibold">{formatInr(line.lineTotalPaise)}</div>}
+              <div key={`${line.productId}-${line.quantity}`} class={`receipt-item-row ${sale.isGift ? 'receipt-item-row-gift' : ''}`}>
+                <div class="font-semibold receipt-item-name">{line.productName}</div>
+                <div class="text-sm text-ink-light receipt-item-qty"><span class="receipt-mobile-label">Qty: </span>{line.quantity}</div>
+                {!sale.isGift && <>
+                  <div class="receipt-number-cell receipt-unit-price">{formatInr(line.unitPricePaise)}</div>
+                  <div class="font-semibold receipt-number-cell receipt-line-total">{formatInr(line.lineTotalPaise)}</div>
+                </>}
               </div>
             ))}
           </div>
@@ -1829,7 +1835,7 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
               <div class="font-semibold text-purple-700">Gift — no payment due</div>
             </div>
           ) : (
-            <div class="card mb-4">
+            <div class="card mb-4 receipt-totals-card">
               <div class="flex justify-between mb-2">
                 <span>Subtotal</span>
                 <span>{formatInr(sale.subtotalPaise)}</span>
@@ -1840,25 +1846,27 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
                   <span>- {formatInr(sale.discountPaise)}</span>
                 </div>
               )}
-              <div class="flex justify-between font-semibold border-t border-line pt-2 mb-3">
-                <span>Total</span>
+              <div class={`flex justify-between font-semibold border-t border-line pt-2 ${sale.paymentStatus === 'paid' ? '' : 'mb-3'}`}>
+                <span>{sale.paymentStatus === 'paid' ? 'Total paid' : 'Total'}</span>
                 <span>{formatInr(sale.totalPaise)}</span>
               </div>
-              <div class="flex justify-between mb-2 text-ink-light">
-                <span>Amount received</span>
-                <span>{formatInr(sale.paidPaise ?? 0)}</span>
-              </div>
-              <div class="flex justify-between font-semibold border-t border-line pt-2">
-                <span>Balance due</span>
-                <span>{formatInr(balancePaise)}</span>
-              </div>
+              {sale.paymentStatus !== 'paid' && <>
+                <div class="flex justify-between mb-2 text-ink-light">
+                  <span>Amount received</span>
+                  <span>{formatInr(sale.paidPaise ?? 0)}</span>
+                </div>
+                <div class="flex justify-between font-semibold border-t border-line pt-2">
+                  <span>Balance due</span>
+                  <span>{formatInr(balancePaise)}</span>
+                </div>
+              </>}
             </div>
           )}
 
           {/* Recorded Payments list with per-payment edit */}
           {!sale.isGift && sale.payments && sale.payments.length > 0 && (
             <div class="card mb-4">
-              <h2 class="text-md font-semibold mb-3">Recorded payments</h2>
+              <h2 class="text-md font-semibold mb-3">{sale.payments.length === 1 ? 'Payment' : 'Payments'}</h2>
               {paymentCorrectionError && <div class="error-message mb-3 non-printable" role="alert">{paymentCorrectionError}</div>}
               {sale.payments.map((p) => (
                 <div key={p.id} class="py-2 border-b border-line last:border-b-0">
@@ -1907,6 +1915,8 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
               {sale.cancelledAt && <div class="text-xs text-ink-light mt-1">Cancelled at: {new Date(sale.cancelledAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>}
             </div>
           )}
+
+          {sale.status !== 'cancelled' && <div class="receipt-thanks">Thank you</div>}
         </div>
 
         {/* Add Payment section for unpaid/partial sales */}
