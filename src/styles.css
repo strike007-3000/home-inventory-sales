@@ -192,7 +192,6 @@ button.card { font: inherit; color: inherit; }
 .receipt-line-total { grid-column: 2; grid-row: 1; }
 .receipt-number-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .receipt-mobile-label { display: inline; }
-.receipt-unit-price { display: none; }
 .receipt-thanks { display: none; }
 
 .sticky-action { position: fixed; z-index: 20; left: 0; right: 0; bottom: calc(var(--bottom-nav) + env(safe-area-inset-bottom, 0px)); padding: 10px 14px; border-top: 1px solid var(--line); background: rgba(255,255,255,.97); }
@@ -337,12 +336,11 @@ button.card { font: inherit; color: inherit; }
   .stock-change-inputs { grid-template-columns: 1fr 1fr; gap: 14px; }
   .sale-detail-header { flex-direction: row; justify-content: space-between; gap: 24px; }
   .sale-edit-button { width: auto; flex: 0 0 auto; white-space: nowrap; }
-  .receipt-item-head, .receipt-item-row { grid-template-columns: minmax(0, 1fr) 52px 96px 96px; gap: 12px; }
+  .receipt-item-head, .receipt-item-row { grid-template-columns: minmax(0, 1fr) 52px 110px; gap: 12px; }
   .receipt-item-head { display: grid; }
   .receipt-item-head-gift, .receipt-item-row-gift { grid-template-columns: minmax(0, 1fr) 52px; }
   .receipt-item-qty, .receipt-line-total { grid-column: auto; grid-row: auto; }
   .receipt-mobile-label { display: none; }
-  .receipt-unit-price { display: block; }
 }
 
 @media (min-width: 1024px) {
@@ -421,6 +419,7 @@ button.card { font: inherit; color: inherit; }
   .printable-region {
     display: block !important;
     padding: 12mm 14mm !important;
+    box-decoration-break: clone;
   }
   .sale-detail-header {
     padding-bottom: 18px;
@@ -436,7 +435,7 @@ button.card { font: inherit; color: inherit; }
     display: grid;
   }
   .receipt-item-head, .receipt-item-row {
-    grid-template-columns: minmax(0, 1fr) 52px 96px 96px;
+    grid-template-columns: minmax(0, 1fr) 52px 110px;
     gap: 12px;
   }
   .receipt-item-head-gift, .receipt-item-row-gift {
@@ -448,9 +447,6 @@ button.card { font: inherit; color: inherit; }
   }
   .receipt-mobile-label {
     display: none;
-  }
-  .receipt-unit-price {
-    display: block;
   }
   .receipt-thanks {
     display: block;

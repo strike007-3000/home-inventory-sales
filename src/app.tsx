@@ -1815,16 +1815,13 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
             <div class={`receipt-item-head ${sale.isGift ? 'receipt-item-head-gift' : ''}`} aria-hidden="true">
               <span>Item</span>
               <span class="receipt-number-cell">Qty</span>
-              {!sale.isGift && <><span class="receipt-number-cell">Unit price</span><span class="receipt-number-cell">Amount</span></>}
+              {!sale.isGift && <span class="receipt-number-cell">Amount</span>}
             </div>
             {sale.lines.map((line) => (
               <div key={`${line.productId}-${line.quantity}`} class={`receipt-item-row ${sale.isGift ? 'receipt-item-row-gift' : ''}`}>
                 <div class="font-semibold receipt-item-name">{line.productName}</div>
                 <div class="text-sm text-ink-light receipt-item-qty"><span class="receipt-mobile-label">Qty: </span>{line.quantity}</div>
-                {!sale.isGift && <>
-                  <div class="receipt-number-cell receipt-unit-price">{formatInr(line.unitPricePaise)}</div>
-                  <div class="font-semibold receipt-number-cell receipt-line-total">{formatInr(line.lineTotalPaise)}</div>
-                </>}
+                {!sale.isGift && <div class="font-semibold receipt-number-cell receipt-line-total">{formatInr(line.lineTotalPaise)}</div>}
               </div>
             ))}
           </div>
