@@ -294,6 +294,12 @@ type SalesViewState = {
   statusFilter: SalesStatusFilter;
 };
 
+const EMPTY_SALES_VIEW_STATE: SalesViewState = {
+  query: '',
+  appliedQuery: '',
+  statusFilter: 'all',
+};
+
 interface SalesHistoryScreenProps {
   state: InventoryState;
   onStateChange: InventoryStateSetter;
@@ -2090,11 +2096,7 @@ export function App() {
   const [openProductsInSetup, setOpenProductsInSetup] = useState(false);
   const [lastCompletedSaleId, setLastCompletedSaleId] = useState<number>(0);
   const [saleDetailsBackRoute, setSaleDetailsBackRoute] = useState<'home' | 'sales'>('home');
-  const [salesViewState, setSalesViewState] = useState<SalesViewState>({
-    query: '',
-    appliedQuery: '',
-    statusFilter: 'all',
-  });
+  const [salesViewState, setSalesViewState] = useState<SalesViewState>(EMPTY_SALES_VIEW_STATE);
   const [activeSaleIdempotencyKey, setActiveSaleIdempotencyKey] = useState<string>(() => crypto.randomUUID());
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -2136,6 +2138,12 @@ export function App() {
     window.addEventListener('api:signed-out', handler);
     return () => window.removeEventListener('api:signed-out', handler);
   }, []);
+
+  useEffect(() => {
+    if (signedIn !== false) return;
+    setSalesViewState(EMPTY_SALES_VIEW_STATE);
+    setSaleDetailsBackRoute('home');
+  }, [signedIn]);
 
   const handleNavigate = useCallback((newRoute: Route | 'products', productId?: number) => {
     if (newRoute === 'view-sale' && route !== 'view-sale' && route !== 'cancel-sale-confirm') {
