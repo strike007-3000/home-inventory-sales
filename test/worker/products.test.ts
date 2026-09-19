@@ -402,6 +402,25 @@ describe('Product API', () => {
       expect(data.error).toContain('SKU');
     });
 
+    it('rejects duplicates across case, whitespace, location, price, and packaging changes', async () => {
+      const location = await env.DB.prepare('SELECT id FROM locations ORDER BY id LIMIT 1').first<{ id: number }>();
+      await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Storage Box', colour: 'Blue', size: 'Medium', pricePaise: 10000,
+        quantity: 2, setStockQuantity: 1, unitsPerSet: 2, lowStockLevel: 1,
+        locationId: null, personalUse: false, active: true,
+      });
+
+      const response = await apiPostProducts(session, csrf, '/api/products', {
+        name: '  storage box  ', colour: ' blue ', size: 'MEDIUM', pricePaise: 12000,
+        quantity: 1, setStockQuantity: 1, unitsPerSet: 1, lowStockLevel: 1,
+        locationId: location!.id, personalUse: true, active: false,
+      });
+
+      expect(response.status).toBe(409);
+      const data = await response.json<{ error: string }>();
+      expect(data.error).toContain('Edit it or use Change stock');
+    });
+
     it('rejects missing CSRF on POST', async () => {
       const response = await exports.default.fetch(
         apiRequest('/api/products', {
@@ -630,6 +649,25 @@ describe('Product API', () => {
       expect(updateResponse.status).toBe(409);
       const data = await updateResponse.json<{ error: string }>();
       expect(data.error).toContain('SKU');
+    });
+
+    it('rejects editing a product into another product identity', async () => {
+      const first = await (await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Round Container', colour: 'Red', size: 'Large', pricePaise: 10000,
+        quantity: 0, lowStockLevel: 1, active: true,
+      })).json<{ id: number; version: number }>();
+      const second = await (await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Square Container', colour: 'Blue', size: 'Small', pricePaise: 10000,
+        quantity: 0, lowStockLevel: 1, active: true,
+      })).json<{ id: number; version: number }>();
+
+      const response = await apiPutProducts(session, csrf, `/api/products/${second.id}?version=${second.version}`, {
+        name: ' round container ', colour: 'RED', size: ' large ', pricePaise: 10000,
+        quantity: 0, lowStockLevel: 1, active: true,
+      });
+
+      expect(response.status).toBe(409);
+      expect(first.id).not.toBe(second.id);
     });
 
     it('rejects unauthenticated updates', async () => {
@@ -1096,6 +1134,23 @@ describe('Product API', () => {
       expect(allErrors.some((e) => e.includes('already exists'))).toBe(true);
     });
 
+    it('detects duplicate product names within a CSV and against products without colour or size', async () => {
+      await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Existing Import Product', pricePaise: 1000, quantity: 0,
+        lowStockLevel: 1, active: true,
+      });
+
+      const csv = `${VALID_HEADERS}\nRepeated Product,Home,1000,1,1,IMPORT-1\n repeated product ,Kitchen,2000,2,1,IMPORT-2\n existing import product ,Home,3000,3,1,IMPORT-3`;
+      const data = await (await previewCsv(csv)).json<{
+        totals: { valid: number; invalid: number };
+        invalidRows: Array<{ rowNumber: number; errors: string[] }>;
+      }>();
+
+      expect(data.totals).toMatchObject({ valid: 1, invalid: 2 });
+      expect(data.invalidRows.flatMap((row) => row.errors).join(' ')).toContain('Duplicate product');
+      expect(data.invalidRows.flatMap((row) => row.errors).join(' ')).toContain('already exists in the database');
+    });
+
     it('handles BOM, CRLF, and escaped quotes', async () => {
       const csv = `﻿${VALID_HEADERS}\r\n"Product with ""quotes""",Home,1000,5,1,SKU-BOM\r\nProduct B,Kitchen,2000,3,1,SKU-2`;
       const response = await previewCsv(csv);
@@ -1326,6 +1381,19 @@ describe('Product API', () => {
         lowStockLevel: 1,
         quantity: 1,
         active: true,
+      });
+
+      const response = await commitImport(preview.requestId);
+      expect(response.status).toBe(409);
+    });
+
+    it('rejects when a matching product is created after preview', async () => {
+      const csv = `${VALID_HEADERS}\nImport Race Product,Home,1000,5,1,IMPORT-RACE`;
+      const preview = await (await previewCsv(csv)).json<{ requestId: string }>();
+
+      await apiPostProducts(session, csrf, '/api/products', {
+        name: ' import race product ', pricePaise: 999, quantity: 0,
+        lowStockLevel: 1, active: true,
       });
 
       const response = await commitImport(preview.requestId);

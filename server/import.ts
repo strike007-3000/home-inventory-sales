@@ -10,6 +10,7 @@ import {
 } from './validation';
 
 import type { ImportCommitRequest } from '../shared/contracts';
+import { productIdentityKey } from './product-identity';
 
 // ============================================================================
 // Constants
@@ -224,6 +225,7 @@ async function handleImportPreview(
 
   // Track exact duplicate row signatures
   const seenSigs = new Map<string, number>(); // normalized sig → first row number
+  const seenProducts = new Map<string, number>(); // CSV has no colour or size columns
 
   for (let i = 0; i < dataRows.length; i++) {
     const rowNumber = i + 2; // 1-indexed, header is row 1
@@ -281,6 +283,16 @@ async function handleImportPreview(
       }
     }
 
+    const productKey = productIdentityKey(name, null, null);
+    if (name) {
+      const firstRow = seenProducts.get(productKey);
+      if (firstRow !== undefined) {
+        issues.push(`Duplicate product — first seen in row ${firstRow}`);
+      } else {
+        seenProducts.set(productKey, rowNumber);
+      }
+    }
+
     // Exact duplicate row
     const sig = [
       name.toLowerCase(),
@@ -306,6 +318,19 @@ async function handleImportPreview(
         .first();
       if (conflict) {
         issues.push(`SKU "${sku}" already exists in the database`);
+      }
+    }
+
+    if (name && issues.length === 0) {
+      const candidates = await env.DB.prepare(
+        `SELECT id, name, colour, size FROM products
+         WHERE identity_key = ? OR identity_key IS NULL`,
+      ).bind(productKey).all<{ id: number; name: string; colour: string | null; size: string | null }>();
+      const conflict = candidates.results.find(
+        (product) => productIdentityKey(product.name, product.colour, product.size) === productKey,
+      );
+      if (conflict) {
+        issues.push(`Product already exists in the database (ID ${conflict.id}: ${conflict.name})`);
       }
     }
 
@@ -523,6 +548,26 @@ async function handleImportCommit(
     }
   }
 
+  const productKeys = staged.results.map((row) => productIdentityKey(row.name, null, null));
+  if (new Set(productKeys).size !== productKeys.length) {
+    return errorResponse('Duplicate products in import', 409);
+  }
+
+  const productCandidates = await env.DB.prepare(
+    `SELECT id, name, colour, size FROM products
+     WHERE identity_key IN (SELECT value FROM json_each(?)) OR identity_key IS NULL`,
+  ).bind(JSON.stringify(productKeys))
+    .all<{ id: number; name: string; colour: string | null; size: string | null }>();
+  const productConflict = productCandidates.results.find(
+    (product) => productKeys.includes(productIdentityKey(product.name, product.colour, product.size)),
+  );
+  if (productConflict) {
+    return errorResponse(
+      `A matching product already exists (ID ${productConflict.id}: ${productConflict.name})`,
+      409,
+    );
+  }
+
   // ---- Build atomic batch ----
   const now = new Date().toISOString();
   const claimToken = crypto.randomUUID();
@@ -554,15 +599,15 @@ async function handleImportCommit(
       env.DB.prepare(
         `INSERT INTO products
            (sku, name, category, selling_price_minor, cost_price_minor,
-            stock_quantity, low_stock_level, active, version, created_at, updated_at)
-         SELECT ?, ?, ?, ?, NULL, ?, ?, ?, 1, ?, ?
+            stock_quantity, low_stock_level, active, identity_key, version, created_at, updated_at)
+         SELECT ?, ?, ?, ?, NULL, ?, ?, ?, ?, 1, ?, ?
          WHERE (
            SELECT COUNT(*) FROM import_staging
            WHERE request_id = ? AND consumed = 1 AND claim_token = ?
          ) = ?`,
       ).bind(
         sku, name, category, priceMinor, quantity, lowStockLevel,
-        active ? 1 : 0, now, now,
+        active ? 1 : 0, productIdentityKey(name, null, null), now, now,
         requestId, claimToken, staged.results.length,
       ),
     );
@@ -598,7 +643,13 @@ async function handleImportCommit(
       inserted: staged.results.length,
       failures: [],
     });
-  } catch (_error) {
+  } catch (error) {
+    if (error instanceof Error && (
+      error.message.includes('idx_products_identity') ||
+      error.message.includes('UNIQUE constraint failed: products.identity_key')
+    )) {
+      return errorResponse('A matching product was created before this import completed', 409);
+    }
     return jsonResponse(
       {
         success: false,
