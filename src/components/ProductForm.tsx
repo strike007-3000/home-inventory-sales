@@ -19,9 +19,9 @@ export function formatRupeesInput(paise: number | null): string {
   return paise !== null ? String(paise / 100) : '';
 }
 
-export function calculateDiscountedPrice(mrpPaise: number | null, discountPercent: number): number | null {
-  if (mrpPaise === null || !Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) return null;
-  return Math.round(mrpPaise * (100 - discountPercent) / 100);
+export function calculateDiscountedPrice(basePricePaise: number | null, discountPercent: number): number | null {
+  if (basePricePaise === null || !Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) return null;
+  return Math.round(basePricePaise * (100 - discountPercent) / 100);
 }
 
 function parseRupees(value: string): number | null {
@@ -61,10 +61,10 @@ export function ProductForm({
   const [existingCheck, setExistingCheck] = useState<{ product: ProductDTO | null; error?: string } | null>(null);
   const existingCheckRevision = useRef(0);
   const [cpDiscount, setCpDiscount] = useState(() => {
-    const mrp = initialData?.mrpPaise;
+    const srp = initialData?.pricePaise;
     const cp = initialData?.consultantPricePaise;
-    const discount = mrp && cp !== null && cp !== undefined
-      ? Math.round((1 - cp / mrp) * 10_000) / 100
+    const discount = srp && cp !== null && cp !== undefined
+      ? Math.round((1 - cp / srp) * 10_000) / 100
       : 24;
     return String(discount >= 0 && discount <= 100 ? discount : 24);
   });
@@ -191,11 +191,11 @@ export function ProductForm({
           if (keepRawText) setPriceText((previous) => ({ ...previous, [field]: value }));
           const paise = parseRupees(value);
           setField(field, paise);
-          if (field === 'mrpPaise') {
+          if (field === 'pricePaise') {
             const calculated = calculateDiscountedPrice(paise, cpDiscount.trim() === '' ? Number.NaN : Number(cpDiscount));
             if (calculated !== null) setField('consultantPricePaise', calculated);
-          } else if (field === 'consultantPricePaise' && formData.mrpPaise && paise !== null) {
-            const discount = Math.round((1 - paise / formData.mrpPaise) * 10_000) / 100;
+          } else if (field === 'consultantPricePaise' && formData.pricePaise && paise !== null) {
+            const discount = Math.round((1 - paise / formData.pricePaise) * 10_000) / 100;
             if (discount >= 0 && discount <= 100) setCpDiscount(String(discount));
           }
         }}
@@ -295,7 +295,7 @@ export function ProductForm({
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div class="form-group">
-          <label class="form-label" for="cpDiscount">CP discount from MRP (%)</label>
+          <label class="form-label" for="cpDiscount">CP discount from SRP (%)</label>
           <input
             id="cpDiscount"
             type="number"
@@ -304,7 +304,7 @@ export function ProductForm({
             onInput={(event) => {
               const value = (event.target as HTMLInputElement).value;
               setCpDiscount(value);
-              const calculated = calculateDiscountedPrice(formData.mrpPaise, value.trim() === '' ? Number.NaN : Number(value));
+              const calculated = calculateDiscountedPrice(formData.pricePaise, value.trim() === '' ? Number.NaN : Number(value));
               if (calculated !== null) setField('consultantPricePaise', calculated);
             }}
             min="0"
@@ -313,7 +313,7 @@ export function ProductForm({
             inputMode="decimal"
             disabled={loading}
           />
-          <span class="form-hint block">Defaults to 24% less than MRP.</span>
+          <span class="form-hint block">Defaults to 24% less than SRP.</span>
         </div>
         {priceInput('cp', 'Consultant price (CP) per Stock/set', 'consultantPricePaise')}
       </div>
