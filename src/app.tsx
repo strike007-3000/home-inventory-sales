@@ -288,20 +288,32 @@ function ProductCard({
 // ============================================================================
 
 type SalesStatusFilter = 'all' | 'gift' | 'unpaid' | 'partial' | 'paid' | 'cancelled';
+type SalesViewState = {
+  query: string;
+  appliedQuery: string;
+  statusFilter: SalesStatusFilter;
+};
+
+const EMPTY_SALES_VIEW_STATE: SalesViewState = {
+  query: '',
+  appliedQuery: '',
+  statusFilter: 'all',
+};
 
 interface SalesHistoryScreenProps {
   state: InventoryState;
   onStateChange: InventoryStateSetter;
   onNavigate: (route: Route) => void;
   setLastCompletedSaleId: (id: number) => void;
+  viewState: SalesViewState;
+  onViewStateChange: (state: SalesViewState) => void;
 }
 
-function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompletedSaleId }: SalesHistoryScreenProps) {
+function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompletedSaleId, viewState, onViewStateChange }: SalesHistoryScreenProps) {
   const [sales, setSales] = useState<readonly SaleSummaryDTO[]>([]);
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<SalesStatusFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { query, appliedQuery, statusFilter } = viewState;
 
   const loadSales = useCallback(async (search = '') => {
     setIsLoading(true);
@@ -316,7 +328,7 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
     }
   }, []);
 
-  useEffect(() => { void loadSales(); }, [loadSales]);
+  useEffect(() => { void loadSales(appliedQuery); }, [loadSales, appliedQuery]);
 
   const visibleSales = sales.filter((sale) => {
     if (statusFilter === 'all') return true;
@@ -353,16 +365,23 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
           </div>
         </div>
 
-        <form class="sales-search-form" onSubmit={(event) => { event.preventDefault(); void loadSales(query); }}>
+        <form class="sales-search-form" onSubmit={(event) => {
+          event.preventDefault();
+          if (query === appliedQuery) void loadSales(query);
+          else onViewStateChange({ ...viewState, appliedQuery: query });
+        }}>
           <div class="search-input">
             <SearchIcon />
             <input type="search" class="form-input" value={query}
               placeholder="Search customer or sale number..." aria-label="Search sales"
-              onInput={(event) => setQuery((event.target as HTMLInputElement).value)} />
+              onInput={(event) => onViewStateChange({ ...viewState, query: (event.target as HTMLInputElement).value })} />
           </div>
           <div class="sales-search-actions">
             <button class="btn btn-navy" type="submit">Search</button>
-            <button class="btn btn-secondary" type="button" onClick={() => { setQuery(''); void loadSales(); }}>Reset</button>
+            <button class="btn btn-secondary" type="button" onClick={() => {
+              if (appliedQuery === '') void loadSales();
+              onViewStateChange({ ...viewState, query: '', appliedQuery: '' });
+            }}>Reset</button>
           </div>
         </form>
 
@@ -382,7 +401,7 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
               type="button"
               class={`filter-pill ${statusFilter === item.value ? 'selected' : ''}`}
               aria-pressed={statusFilter === item.value}
-              onClick={() => setStatusFilter(item.value)}
+              onClick={() => onViewStateChange({ ...viewState, statusFilter: item.value })}
             >
               {item.label}
             </button>
@@ -1564,9 +1583,10 @@ interface ViewSaleScreenProps {
   lastCompletedSaleId: number;
   onStateChange: InventoryStateSetter;
   onNavigate: (route: Route) => void;
+  backRoute: 'home' | 'sales';
 }
 
-function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate }: ViewSaleScreenProps) {
+function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate, backRoute }: ViewSaleScreenProps) {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('upi');
   const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -1719,8 +1739,8 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
     <div class="screen">
       <div class="main no-sticky-action">
         <div class="flex justify-between items-center mb-4 non-printable">
-          <button class="btn btn-ghost btn-sm" onClick={() => onNavigate('home')} type="button">
-            <ChevronLeftIcon /> Back
+          <button class="btn btn-ghost btn-sm" onClick={() => onNavigate(backRoute)} type="button">
+            <ChevronLeftIcon /> {backRoute === 'sales' ? 'Back to sales' : 'Back'}
           </button>
           <button class="btn btn-secondary btn-sm" onClick={handlePrint} type="button">
             <PrintIcon /> Print / Save PDF
@@ -2075,6 +2095,8 @@ export function App() {
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [openProductsInSetup, setOpenProductsInSetup] = useState(false);
   const [lastCompletedSaleId, setLastCompletedSaleId] = useState<number>(0);
+  const [saleDetailsBackRoute, setSaleDetailsBackRoute] = useState<'home' | 'sales'>('home');
+  const [salesViewState, setSalesViewState] = useState<SalesViewState>(EMPTY_SALES_VIEW_STATE);
   const [activeSaleIdempotencyKey, setActiveSaleIdempotencyKey] = useState<string>(() => crypto.randomUUID());
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -2117,7 +2139,16 @@ export function App() {
     return () => window.removeEventListener('api:signed-out', handler);
   }, []);
 
+  useEffect(() => {
+    if (signedIn !== false) return;
+    setSalesViewState(EMPTY_SALES_VIEW_STATE);
+    setSaleDetailsBackRoute('home');
+  }, [signedIn]);
+
   const handleNavigate = useCallback((newRoute: Route | 'products', productId?: number) => {
+    if (newRoute === 'view-sale' && route !== 'view-sale' && route !== 'cancel-sale-confirm') {
+      setSaleDetailsBackRoute(route === 'sales' ? 'sales' : 'home');
+    }
     setRoute(newRoute as Route);
     if (newRoute === 'products' && productId !== undefined) {
       setSelectedProductId(productId);
@@ -2127,7 +2158,7 @@ export function App() {
       setOpenProductsInSetup(false);
       window.scrollTo(0, 0);
     }
-  }, []);
+  }, [route]);
 
   const handleLogout = useCallback(async () => {
     setIsLoggingOut(true);
@@ -2166,7 +2197,7 @@ export function App() {
       case 'sell':
         return <SellScreen state={state} onSaleDraftChange={handleSaleDraftChange} onNavigate={handleNavigate} onNeedsSetup={openNeedsSetup} />;
       case 'sales':
-        return <SalesHistoryScreen state={state} onStateChange={setState} onNavigate={handleNavigate} setLastCompletedSaleId={setLastCompletedSaleId} />;
+        return <SalesHistoryScreen state={state} onStateChange={setState} onNavigate={handleNavigate} setLastCompletedSaleId={setLastCompletedSaleId} viewState={salesViewState} onViewStateChange={setSalesViewState} />;
       case 'review-sale':
         return (
           <ReviewSaleScreen
@@ -2189,7 +2220,7 @@ export function App() {
       case 'fix-stock':
         return <FixStockScreen state={state} onStateChange={setState} />;
       case 'view-sale':
-        return <ViewSaleScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
+        return <ViewSaleScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} backRoute={saleDetailsBackRoute} />;
       case 'cancel-sale-confirm':
         return <CancelSaleConfirmScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
       case 'products':
