@@ -10,7 +10,7 @@ describe('product price input formatting', () => {
 });
 
 describe('consultant price calculation', () => {
-  it('defaults CP to 24% less than MRP without losing paise precision', () => {
+  it('defaults CP to 24% less than SRP without losing paise precision', () => {
     expect(calculateDiscountedPrice(100_00, 24)).toBe(76_00);
     expect(calculateDiscountedPrice(999_99, 24)).toBe(75_999);
     expect(calculateDiscountedPrice(null, 24)).toBeNull();
