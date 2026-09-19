@@ -379,28 +379,39 @@ export async function handleCancelSale(id: number, request: Request, env: Env): 
   const sale = await env.DB.prepare('SELECT id, status FROM sales WHERE id = ?').bind(id).first<{ id: number; status: string }>();
   if (!sale) return errorResponse('Sale not found', 404);
   if (sale.status === 'cancelled') return errorResponse('Sale is already cancelled', 409);
+  // Consolidation can leave multiple historical price/packaging lines for one product.
+  // Restore each product once, expressing historical set deltas in its current units.
   const itemRows = await env.DB.prepare(
-    `SELECT si.product_id, si.quantity, si.set_stock_before, si.set_stock_after,
+    `SELECT si.product_id, SUM(si.quantity) AS quantity,
+            SUM((si.set_stock_before - si.set_stock_after) *
+              CASE WHEN si.units_per_set_snapshot IS NOT NULL AND p.units_per_set IS NOT NULL
+                THEN 1.0 * si.units_per_set_snapshot / p.units_per_set ELSE 1 END) AS set_delta,
             p.set_stock_quantity, p.version
-     FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.sale_id = ? ORDER BY si.id`,
-  ).bind(id).all<{ product_id: number; quantity: number; set_stock_before: number; set_stock_after: number; set_stock_quantity: number; version: number }>();
+     FROM sale_items si JOIN products p ON p.id = si.product_id
+     WHERE si.sale_id = ? GROUP BY si.product_id ORDER BY si.product_id`,
+  ).bind(id).all<{ product_id: number; quantity: number; set_delta: number; set_stock_quantity: number; version: number }>();
   for (const item of itemRows.results) {
-    if (item.set_stock_quantity + item.set_stock_before - item.set_stock_after < 0) {
+    if (item.set_stock_quantity + item.set_delta < 0) {
       return errorResponse('Set stock changed after this sale and cannot be safely reversed; correct stock first', 409);
     }
   }
+  const guards = itemRows.results.map(() =>
+    'EXISTS (SELECT 1 FROM products WHERE id = ? AND version = ?)',
+  ).join(' AND ') || '1';
+  const guardValues = itemRows.results.flatMap((item) => [item.product_id, item.version]);
   const now = new Date().toISOString();
   const batch: D1PreparedStatement[] = [
     env.DB.prepare(
       `INSERT INTO sale_cancellations (sale_id, reason, cancelled_at)
-       SELECT id, ?, ? FROM sales WHERE id = ? AND status = 'completed'`,
-    ).bind(reason, now, id),
+       SELECT id, CASE WHEN ${guards} THEN ? ELSE NULL END, ?
+       FROM sales WHERE id = ? AND status = 'completed'`,
+    ).bind(...guardValues, reason, now, id),
   ];
   for (const item of itemRows.results) {
-    const setDelta = item.set_stock_before - item.set_stock_after;
+    const setDelta = item.set_delta;
     batch.push(env.DB.prepare(
       `UPDATE products SET stock_quantity = stock_quantity + ?, set_stock_quantity = set_stock_quantity + ?, updated_at = ?, version = version + 1
-       WHERE id = ? AND version = ? AND EXISTS (SELECT 1 FROM sale_cancellations WHERE sale_id = ?)`,
+       WHERE id = ? AND version = ? AND EXISTS (SELECT 1 FROM sale_cancellations c JOIN sales s ON s.id = c.sale_id WHERE c.sale_id = ? AND s.status = 'completed')`,
     ).bind(item.quantity, setDelta, now, item.product_id, item.version, id));
     batch.push(env.DB.prepare(
       `INSERT INTO stock_movements (product_id, quantity_delta, set_stock_delta, reason, sale_id, note, created_at)
@@ -409,7 +420,7 @@ export async function handleCancelSale(id: number, request: Request, env: Env): 
   }
   batch.push(env.DB.prepare(
     `UPDATE sales SET status = 'cancelled', cancelled_at = ?, cancellation_reason = ?
-     WHERE id = ? AND EXISTS (SELECT 1 FROM sale_cancellations WHERE sale_id = ?)`,
+     WHERE id = ? AND EXISTS (SELECT 1 FROM sale_cancellations c JOIN sales s ON s.id = c.sale_id WHERE c.sale_id = ? AND s.status = 'completed')`,
   ).bind(now, reason, id, id));
   try {
     const results = await env.DB.batch(batch);

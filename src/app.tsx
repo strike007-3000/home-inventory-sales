@@ -1817,8 +1817,8 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
               <span class="receipt-number-cell">Qty</span>
               {!sale.isGift && <span class="receipt-number-cell">Amount</span>}
             </div>
-            {sale.lines.map((line) => (
-              <div key={`${line.productId}-${line.quantity}`} class={`receipt-item-row ${sale.isGift ? 'receipt-item-row-gift' : ''}`}>
+            {sale.lines.map((line, lineIndex) => (
+              <div key={`${line.productId}-${lineIndex}`} class={`receipt-item-row ${sale.isGift ? 'receipt-item-row-gift' : ''}`}>
                 <div class="font-semibold receipt-item-name">{line.productName}</div>
                 <div class="text-sm text-ink-light receipt-item-qty"><span class="receipt-mobile-label">Qty: </span>{line.quantity}</div>
                 {!sale.isGift && <div class="font-semibold receipt-number-cell receipt-line-total">{formatInr(line.lineTotalPaise)}</div>}
@@ -2022,8 +2022,8 @@ function CancelSaleConfirmScreen({
         <div class="card mb-4">
           <p class="mb-3">This will put {sale.lines.reduce((sum, l) => sum + l.quantity, 0)} {sale.lines.reduce((sum, l) => sum + l.quantity, 0) === 1 ? 'item' : 'items'} back into stock:</p>
           <ul class="mb-3">
-            {sale.lines.map((line) => (
-              <li key={`${line.productId}-${line.quantity}`} class="mb-1">
+            {sale.lines.map((line, lineIndex) => (
+              <li key={`${line.productId}-${lineIndex}`} class="mb-1">
                 {line.productName}: +{line.quantity}
               </li>
             ))}
