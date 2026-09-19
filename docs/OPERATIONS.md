@@ -98,3 +98,19 @@ npx wrangler d1 migrations list YOUR_D1_DATABASE --remote
 ## Backup and recovery
 
 Cloudflare D1 is the production system of record. User-facing export/restore is not implemented yet, so operational backup and restoration procedures remain a known gap. Do not describe committed migrations as a backup of business data: they restore schema only.
+
+## Product consolidation
+
+Deploy cancellation support for multiple historical lines per product before consolidating products.
+Keep sale items, prices, packaging snapshots, payments, and original stock movements intact;
+only repoint their product references to the canonical product. Cancellation groups by product
+and converts historical set deltas into the current pieces-per-set units.
+
+Use `product_consolidation_audit` to retain full before/after evidence, original reference mappings,
+and the reason for each operation inside D1. Capture a Time Travel bookmark first. Run the
+cleanup atomically with assertions on expected versions and history, and record explicit stock
+corrections after confirming physical stock. Preserve original set-unit context in movement notes
+when the products used different packaging. Do not delete historical sale lines or payment records.
+
+Production cleanup SQL, product IDs, snapshots, and database exports must not be committed.
+Only generic schema, application code, and synthetic regression fixtures belong in Git.

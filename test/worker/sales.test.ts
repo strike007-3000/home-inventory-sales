@@ -1,5 +1,6 @@
 import { env, exports } from 'cloudflare:workers';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { handleCancelSale } from '../../server/sales';
 
 const ORIGIN = 'https://inventory.example.test';
 const PASSWORD = 'worker-test-password';
@@ -215,6 +216,134 @@ describe('Sale API', () => {
       { reason: 'sale', quantity_delta: -3, set_stock_delta: -0.75 },
       { reason: 'cancellation', quantity_delta: 3, set_stock_delta: 0.75 },
     ]);
+  });
+
+  it('restores consolidated sale lines once in current packaging without rewriting history', async () => {
+    const canonical = await addProduct(4, 1, 4);
+    const duplicate = await addProduct(2, 2, 1);
+    const created = await api('/api/sales', 'POST', {
+      idempotencyKey: 'consolidated-history', saleDate: '2026-07-15',
+      lines: [
+        { productId: canonical, quantity: 4, setPricePaise: 20000 },
+        { productId: duplicate, quantity: 2, setPricePaise: 7000 },
+      ],
+      discountPaise: 0, paymentMethod: 'cash', receivedPaise: 34000,
+    });
+    expect(created.status).toBe(201);
+    const sale = await created.json<any>();
+    await env.DB.prepare('UPDATE sale_items SET product_id = ? WHERE product_id = ?')
+      .bind(canonical, duplicate).run();
+    const before = await env.DB.prepare('SELECT * FROM sale_items WHERE sale_id = ? ORDER BY id').bind(sale.id).all();
+    const payments = await env.DB.prepare('SELECT * FROM sale_payments WHERE sale_id = ?').bind(sale.id).all();
+
+    expect((await api(`/api/sales/${sale.id}/cancel`, 'POST', { reason: 'Synthetic return' })).status).toBe(200);
+    expect(await env.DB.prepare('SELECT stock_quantity, set_stock_quantity, version FROM products WHERE id = ?')
+      .bind(canonical).first()).toMatchObject({ stock_quantity: 6, set_stock_quantity: 1.5, version: 3 });
+    expect((await env.DB.prepare("SELECT product_id, quantity_delta, set_stock_delta FROM stock_movements WHERE sale_id = ? AND reason = 'cancellation'")
+      .bind(sale.id).all()).results).toEqual([{ product_id: canonical, quantity_delta: 6, set_stock_delta: 1.5 }]);
+    expect((await env.DB.prepare('SELECT * FROM sale_items WHERE sale_id = ? ORDER BY id').bind(sale.id).all()).results).toEqual(before.results);
+    expect((await env.DB.prepare('SELECT * FROM sale_payments WHERE sale_id = ?').bind(sale.id).all()).results).toEqual(payments.results);
+    expect((await api(`/api/sales/${sale.id}/cancel`, 'POST', { reason: 'Repeated return' })).status).toBe(409);
+    expect(await env.DB.prepare('SELECT stock_quantity FROM products WHERE id = ?').bind(canonical).first())
+      .toMatchObject({ stock_quantity: 6 });
+  });
+
+  it('rolls back all cancellation changes when its stock audit cannot be written', async () => {
+    const first = await addProduct();
+    const second = await addProduct();
+    const created = await api('/api/sales', 'POST', {
+      idempotencyKey: 'cancel-audit-rollback', saleDate: '2026-07-15',
+      lines: [first, second].map((productId) => ({ productId, quantity: 1, setPricePaise: 4000 })),
+      discountPaise: 0, paymentMethod: 'cash', receivedPaise: 2000,
+    });
+    const sale = await created.json<any>();
+    await env.DB.prepare(`CREATE TRIGGER fail_cancellation_audit BEFORE INSERT ON stock_movements
+      WHEN NEW.reason = 'cancellation' AND NEW.product_id = ${second}
+      BEGIN SELECT RAISE(ABORT, 'Synthetic audit failure'); END;`).run();
+    try {
+      expect((await api(`/api/sales/${sale.id}/cancel`, 'POST', { reason: 'Rollback probe' })).status).toBe(500);
+      expect((await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products ORDER BY id').all()).results)
+        .toEqual([{ stock_quantity: 7, set_stock_quantity: 1.75 }, { stock_quantity: 7, set_stock_quantity: 1.75 }]);
+      expect(await env.DB.prepare('SELECT status FROM sales WHERE id = ?').bind(sale.id).first()).toEqual({ status: 'completed' });
+      expect((await env.DB.prepare('SELECT * FROM sale_cancellations').all()).results).toEqual([]);
+      expect((await env.DB.prepare("SELECT * FROM stock_movements WHERE reason = 'cancellation'").all()).results).toEqual([]);
+    } finally {
+      await env.DB.exec('DROP TRIGGER fail_cancellation_audit');
+    }
+  });
+
+  it('does not cancel partially when stock changes between the read and transaction', async () => {
+    const productId = await addProduct();
+    const created = await api('/api/sales', 'POST', {
+      idempotencyKey: 'cancel-version-conflict', saleDate: '2026-07-15',
+      lines: [{ productId, quantity: 1, setPricePaise: 4000 }],
+      discountPaise: 0, paymentMethod: 'cash', receivedPaise: 1000,
+    });
+    const sale = await created.json<any>();
+    const db = new Proxy(env.DB, {
+      get(target, property) {
+        if (property === 'batch') return async (statements: D1PreparedStatement[]) => {
+          await target.prepare('UPDATE products SET stock_quantity = 8, set_stock_quantity = 2, version = version + 1 WHERE id = ?')
+            .bind(productId).run();
+          return target.batch(statements);
+        };
+        const value = Reflect.get(target, property);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const response = await handleCancelSale(sale.id, request('/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'Conflict probe' }),
+    }), { ...env, DB: db });
+    expect(response.status).toBe(500);
+    expect(await env.DB.prepare('SELECT stock_quantity, set_stock_quantity FROM products WHERE id = ?').bind(productId).first())
+      .toEqual({ stock_quantity: 8, set_stock_quantity: 2 });
+    expect(await env.DB.prepare('SELECT status FROM sales WHERE id = ?').bind(sale.id).first()).toEqual({ status: 'completed' });
+    expect((await env.DB.prepare('SELECT * FROM sale_cancellations').all()).results).toEqual([]);
+    expect((await env.DB.prepare("SELECT * FROM stock_movements WHERE reason = 'cancellation'").all()).results).toEqual([]);
+  });
+
+  it.each([49, 100])('cancels a historical sale with %i products within D1 binding limits', async (count) => {
+    // Seed historical rows directly: creation has its own request validation/limits.
+    const productIds: number[] = [];
+    for (let i = 0; i < count; i++) productIds.push(await addProduct(0, 0, 2));
+    const inserted = await env.DB.prepare(
+      `INSERT INTO sales(sale_number,sold_at,sale_date,subtotal_minor,discount_minor,total_minor,status,payment_method)
+       VALUES (?, '2000-01-01', '2000-01-01', ?, 0, ?, 'completed', 'cash')`,
+    ).bind(`SYNTHETIC-LARGE-${count}`, count * 100, count * 100).run();
+    const saleId = Number(inserted.meta.last_row_id);
+    await env.DB.batch(productIds.map((productId) => env.DB.prepare(
+      `INSERT INTO sale_items(sale_id,product_id,product_name_snapshot,unit_price_minor,quantity,line_total_minor,
+        set_stock_before,set_stock_after,units_per_set_snapshot,set_price_minor_snapshot)
+       VALUES (?, ?, 'Synthetic large sale', 100, 1, 100, 0.5, 0, 2, 200)`,
+    ).bind(saleId, productId)));
+    const db = new Proxy(env.DB, {
+      get(target, property) {
+        if (property === 'prepare') return (sql: string) => {
+          const statement = target.prepare(sql);
+          return new Proxy(statement, {
+            get(prepared, method) {
+              if (method === 'bind') return (...values: unknown[]) => {
+                expect(values.length).toBeLessThanOrEqual(100);
+                return prepared.bind(...values);
+              };
+              const value = Reflect.get(prepared, method);
+              return typeof value === 'function' ? value.bind(prepared) : value;
+            },
+          });
+        };
+        const value = Reflect.get(target, property);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const response = await handleCancelSale(saleId, request('/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'Large historical return' }),
+    }), { ...env, DB: db });
+    expect(response.status).toBe(200);
+    expect((await env.DB.prepare('SELECT stock_quantity,set_stock_quantity FROM products').all()).results)
+      .toEqual(productIds.map(() => ({ stock_quantity: 1, set_stock_quantity: 0.5 })));
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count, SUM(quantity_delta) AS quantity FROM stock_movements WHERE reason = 'cancellation'").first())
+      .toEqual({ count, quantity: count });
+    expect(await env.DB.prepare('SELECT status FROM sales WHERE id = ?').bind(saleId).first()).toEqual({ status: 'cancelled' });
   });
 
   it('records later payments without allowing an overpayment', async () => {
