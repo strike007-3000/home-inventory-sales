@@ -302,6 +302,50 @@ describe('Sale API', () => {
     expect((await env.DB.prepare("SELECT * FROM stock_movements WHERE reason = 'cancellation'").all()).results).toEqual([]);
   });
 
+  it.each([49, 100])('cancels a historical sale with %i products within D1 binding limits', async (count) => {
+    // Seed historical rows directly: creation has its own request validation/limits.
+    const productIds: number[] = [];
+    for (let i = 0; i < count; i++) productIds.push(await addProduct(0, 0, 2));
+    const inserted = await env.DB.prepare(
+      `INSERT INTO sales(sale_number,sold_at,sale_date,subtotal_minor,discount_minor,total_minor,status,payment_method)
+       VALUES (?, '2000-01-01', '2000-01-01', ?, 0, ?, 'completed', 'cash')`,
+    ).bind(`SYNTHETIC-LARGE-${count}`, count * 100, count * 100).run();
+    const saleId = Number(inserted.meta.last_row_id);
+    await env.DB.batch(productIds.map((productId) => env.DB.prepare(
+      `INSERT INTO sale_items(sale_id,product_id,product_name_snapshot,unit_price_minor,quantity,line_total_minor,
+        set_stock_before,set_stock_after,units_per_set_snapshot,set_price_minor_snapshot)
+       VALUES (?, ?, 'Synthetic large sale', 100, 1, 100, 0.5, 0, 2, 200)`,
+    ).bind(saleId, productId)));
+    const db = new Proxy(env.DB, {
+      get(target, property) {
+        if (property === 'prepare') return (sql: string) => {
+          const statement = target.prepare(sql);
+          return new Proxy(statement, {
+            get(prepared, method) {
+              if (method === 'bind') return (...values: unknown[]) => {
+                expect(values.length).toBeLessThanOrEqual(100);
+                return prepared.bind(...values);
+              };
+              const value = Reflect.get(prepared, method);
+              return typeof value === 'function' ? value.bind(prepared) : value;
+            },
+          });
+        };
+        const value = Reflect.get(target, property);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const response = await handleCancelSale(saleId, request('/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: 'Large historical return' }),
+    }), { ...env, DB: db });
+    expect(response.status).toBe(200);
+    expect((await env.DB.prepare('SELECT stock_quantity,set_stock_quantity FROM products').all()).results)
+      .toEqual(productIds.map(() => ({ stock_quantity: 1, set_stock_quantity: 0.5 })));
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count, SUM(quantity_delta) AS quantity FROM stock_movements WHERE reason = 'cancellation'").first())
+      .toEqual({ count, quantity: count });
+    expect(await env.DB.prepare('SELECT status FROM sales WHERE id = ?').bind(saleId).first()).toEqual({ status: 'cancelled' });
+  });
+
   it('records later payments without allowing an overpayment', async () => {
     const productId = await addProduct();
     const created = await api('/api/sales', 'POST', {

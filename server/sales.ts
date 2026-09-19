@@ -395,17 +395,22 @@ export async function handleCancelSale(id: number, request: Request, env: Env): 
       return errorResponse('Set stock changed after this sale and cannot be safely reversed; correct stock first', 409);
     }
   }
-  const guards = itemRows.results.map(() =>
-    'EXISTS (SELECT 1 FROM products WHERE id = ? AND version = ?)',
-  ).join(' AND ') || '1';
-  const guardValues = itemRows.results.flatMap((item) => [item.product_id, item.version]);
+  // One JSON binding keeps the guard below D1's parameter limit even for large sales.
+  const expectedVersions = JSON.stringify(itemRows.results.map((item) => [item.product_id, item.version]));
   const now = new Date().toISOString();
   const batch: D1PreparedStatement[] = [
     env.DB.prepare(
       `INSERT INTO sale_cancellations (sale_id, reason, cancelled_at)
-       SELECT id, CASE WHEN ${guards} THEN ? ELSE NULL END, ?
+       SELECT id, CASE WHEN NOT EXISTS (
+         SELECT 1 FROM json_each(?) expected
+         WHERE NOT EXISTS (
+           SELECT 1 FROM products p
+           WHERE p.id = json_extract(expected.value, '$[0]')
+             AND p.version = json_extract(expected.value, '$[1]')
+         )
+       ) THEN ? ELSE NULL END, ?
        FROM sales WHERE id = ? AND status = 'completed'`,
-    ).bind(...guardValues, reason, now, id),
+    ).bind(expectedVersions, reason, now, id),
   ];
   for (const item of itemRows.results) {
     const setDelta = item.set_delta;
