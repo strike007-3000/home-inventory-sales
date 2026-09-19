@@ -154,7 +154,7 @@ export function ProductForm({
           const paise = parseRupees(value);
           setField(field, paise);
           if (field === 'mrpPaise') {
-            const calculated = calculateDiscountedPrice(paise, Number(cpDiscount));
+            const calculated = calculateDiscountedPrice(paise, cpDiscount.trim() === '' ? Number.NaN : Number(cpDiscount));
             if (calculated !== null) setField('consultantPricePaise', calculated);
           } else if (field === 'consultantPricePaise' && formData.mrpPaise && paise !== null) {
             const discount = Math.round((1 - paise / formData.mrpPaise) * 10_000) / 100;
