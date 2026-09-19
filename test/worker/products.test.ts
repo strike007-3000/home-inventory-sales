@@ -255,6 +255,31 @@ describe('Product API', () => {
     });
   });
 
+  describe('GET /api/products/check-existing', () => {
+    it('uses the enforced Unicode identity and includes inactive products', async () => {
+      const created = await apiPostProducts(session, csrf, '/api/products', {
+        name: 'Éclair Box', colour: 'Crème', size: 'Medium', pricePaise: 10000,
+        quantity: 4, setStockQuantity: 2, unitsPerSet: 2, lowStockLevel: 1,
+        active: false,
+      });
+      expect(created.status).toBe(201);
+
+      const params = new URLSearchParams({ name: ' éclair box ', colour: 'crème', size: ' medium ' });
+      const response = await apiGetProducts(session, csrf, `/api/products/check-existing?${params}`);
+      expect(response.status).toBe(200);
+      const data = await response.json<{ exists: boolean; product: { name: string; active: boolean } | null }>();
+      expect(data).toMatchObject({ exists: true, product: { name: 'Éclair Box', active: false } });
+    });
+
+    it('reports no match and requires a name', async () => {
+      const noMatch = await apiGetProducts(session, csrf, '/api/products/check-existing?name=New%20Product');
+      expect(await noMatch.json()).toEqual({ exists: false, product: null });
+
+      const missingName = await apiGetProducts(session, csrf, '/api/products/check-existing');
+      expect(missingName.status).toBe(400);
+    });
+  });
+
   describe('POST /api/products', () => {
     it('creates a product with all fields', async () => {
       const response = await apiPostProducts(session, csrf, '/api/products', {

@@ -97,6 +97,30 @@ async function validateLocation(env: Env, locationId: number | null): Promise<vo
   if (!location) throw new ProductDomainError('Location not found', 400);
 }
 
+async function findDuplicateProduct(
+  env: Env,
+  name: string,
+  colour: string | null,
+  size: string | null,
+  excludeId?: number,
+): Promise<ProductDTO | null> {
+  const identityKey = productIdentityKey(name, colour, size);
+  const candidates = await env.DB.prepare(
+    `${PRODUCT_SELECT}
+     WHERE (identity_key = ? OR identity_key IS NULL)
+       ${excludeId === undefined ? '' : 'AND id != ?'}`,
+  ).bind(...(excludeId === undefined ? [identityKey] : [identityKey, excludeId]))
+    .all<Record<string, unknown>>();
+  const existing = candidates.results.find(
+    (product) => productIdentityKey(
+      product.name as string,
+      product.colour as string | null,
+      product.size as string | null,
+    ) === identityKey,
+  );
+  return existing ? buildProductDTO(existing) : null;
+}
+
 async function rejectDuplicateProduct(
   env: Env,
   name: string,
@@ -104,17 +128,7 @@ async function rejectDuplicateProduct(
   size: string | null,
   excludeId?: number,
 ): Promise<void> {
-  const identityKey = productIdentityKey(name, colour, size);
-  const candidates = await env.DB.prepare(
-    `SELECT id, name, colour, size FROM products
-     WHERE (identity_key = ? OR identity_key IS NULL)
-       ${excludeId === undefined ? '' : 'AND id != ?'}`,
-  ).bind(...(excludeId === undefined ? [identityKey] : [identityKey, excludeId]))
-    .all<{ id: number; name: string; colour: string | null; size: string | null }>();
-  const existing = candidates.results.find(
-    (product) => productIdentityKey(product.name, product.colour, product.size) === identityKey,
-  );
-
+  const existing = await findDuplicateProduct(env, name, colour, size, excludeId);
   if (existing) {
     throw new ProductDomainError(
       `A matching product already exists (ID ${existing.id}: ${existing.name}). Edit it or use Change stock.`,
@@ -565,6 +579,19 @@ export async function handleListLocations(env: Env): Promise<Response> {
   } catch {
     return errorResponse('Internal server error', 500);
   }
+}
+
+export async function handleCheckExistingProduct(url: URL, env: Env): Promise<Response> {
+  const name = getQueryParam(url, 'name', '').trim();
+  if (!name) return errorResponse('Product name is required', 400);
+
+  const product = await findDuplicateProduct(
+    env,
+    name,
+    optionalText(getQueryParam(url, 'colour', '')),
+    optionalText(getQueryParam(url, 'size', '')),
+  );
+  return jsonResponse({ exists: product !== null, product });
 }
 
 export async function handleCreateProduct(request: Request, env: Env): Promise<Response> {

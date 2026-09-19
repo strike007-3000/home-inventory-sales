@@ -485,6 +485,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
                       <div><span>QTY</span><strong>{product.quantity}</strong></div>
                       <div><span>Stock/set</span><strong>{product.setStockQuantity ?? 0}</strong></div>
                       <div><span>SRP</span><strong>{formatInr(product.pricePaise)}</strong></div>
+                      <div><span>MRP</span><strong>{formatInr(product.mrpPaise ?? product.pricePaise)}</strong></div>
                     </div>
 
                     <div class="product-actions">

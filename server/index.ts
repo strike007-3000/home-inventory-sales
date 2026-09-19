@@ -23,6 +23,7 @@ import {
   handleDeactivateProduct,
   handleProductHistory,
   handleListLocations,
+  handleCheckExistingProduct,
 } from './products';
 import { handleStockDelivery, handleStockCount, handleStockAdjustment, handleStockChange } from './stock';
 import { handleImportPreview, handleImportCommit } from './import';
@@ -101,6 +102,9 @@ async function routeApi(
   }
   if (path === '/products' && method === 'POST') {
     return handleCreateProduct(request, env);
+  }
+  if (path === '/products/check-existing' && method === 'GET') {
+    return handleCheckExistingProduct(url, env);
   }
   if (path === '/locations' && method === 'GET') {
     return handleListLocations(env);

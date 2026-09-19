@@ -1,8 +1,9 @@
 import { useState } from 'preact/hooks';
-import type { LocationDTO } from '../../shared/contracts';
-import { validateQuantity, validateWholeNumber } from '../domain';
+import type { LocationDTO, ProductDTO } from '../../shared/contracts';
+import { formatInr, validateQuantity, validateWholeNumber } from '../domain';
 import type { ProductFormData } from '../hooks/useProducts';
 import { ChevronLeftIcon } from '../icons';
+import { apiGetJson } from '../api';
 
 interface ProductFormProps {
   initialData?: Partial<ProductFormData>;
@@ -56,6 +57,8 @@ export function ProductForm({
   }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [checkingExisting, setCheckingExisting] = useState(false);
+  const [existingCheck, setExistingCheck] = useState<{ product: ProductDTO | null; error?: string } | null>(null);
   const [cpDiscount, setCpDiscount] = useState(() => {
     const mrp = initialData?.mrpPaise;
     const cp = initialData?.consultantPricePaise;
@@ -71,12 +74,35 @@ export function ProductForm({
 
   const setField = <K extends keyof ProductFormData>(field: K, value: ProductFormData[K]) => {
     setFormData((previous) => ({ ...previous, [field]: value }));
+    if (field === 'name' || field === 'colour' || field === 'size') setExistingCheck(null);
     if (errors[field]) {
       setErrors((previous) => {
         const next = { ...previous };
         delete next[field];
         return next;
       });
+    }
+  };
+
+  const checkExistingProduct = async () => {
+    if (!formData.name.trim()) {
+      setErrors((previous) => ({ ...previous, name: 'Enter a product name before checking' }));
+      return;
+    }
+    setCheckingExisting(true);
+    setExistingCheck(null);
+    try {
+      const params = new URLSearchParams({
+        name: formData.name,
+        colour: formData.colour ?? '',
+        size: formData.size ?? '',
+      });
+      const result = await apiGetJson<{ exists: boolean; product: ProductDTO | null }>(`/products/check-existing?${params}`);
+      setExistingCheck({ product: result.product });
+    } catch (error) {
+      setExistingCheck({ product: null, error: error instanceof Error ? error.message : 'Could not check products' });
+    } finally {
+      setCheckingExisting(false);
     }
   };
 
@@ -215,6 +241,31 @@ export function ProductForm({
         </div>
       </div>
 
+      {!isEditing && (
+        <div class="form-group">
+          <button
+            type="button"
+            class="btn btn-soft-blue w-full"
+            onClick={() => void checkExistingProduct()}
+            disabled={loading || checkingExisting || !formData.name.trim()}
+          >
+            {checkingExisting ? 'Checking…' : 'Check if product exists'}
+          </button>
+          {existingCheck?.error && <div class="error-message mt-2" role="alert">{existingCheck.error}</div>}
+          {existingCheck && !existingCheck.error && existingCheck.product && (
+            <div class="error-message mt-2" role="status">
+              Product already exists: {existingCheck.product.name}
+              {(existingCheck.product.colour || existingCheck.product.size) && ` · ${[existingCheck.product.colour, existingCheck.product.size].filter(Boolean).join(' · ')}`}
+              {' · '}QTY {existingCheck.product.quantity} · Stock/set {existingCheck.product.setStockQuantity} · SRP {formatInr(existingCheck.product.pricePaise)}
+              {!existingCheck.product.active && ' · Inactive'}
+            </div>
+          )}
+          {existingCheck && !existingCheck.error && !existingCheck.product && (
+            <div class="success-message mt-2" role="status">No matching product found. You can continue.</div>
+          )}
+        </div>
+      )}
+
       <div class="grid grid-cols-2 gap-4">
         <div class="form-group">
           <label class="form-label" for="sku">SKU (optional)</label>
@@ -336,7 +387,7 @@ export function ProductForm({
 
       <div class="flex gap-3 mt-6">
         <button type="button" class="btn btn-secondary flex-1" onClick={onCancel} disabled={loading}>Cancel</button>
-        <button type="submit" class="btn btn-primary flex-1" disabled={loading}>{loading ? 'Saving…' : isEditing ? 'Save changes' : 'Create product'}</button>
+        <button type="submit" class="btn btn-primary flex-1" disabled={loading || (!isEditing && Boolean(existingCheck?.product))}>{loading ? 'Saving…' : isEditing ? 'Save changes' : 'Create product'}</button>
       </div>
     </form>
   );
