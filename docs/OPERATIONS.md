@@ -114,3 +114,11 @@ when the products used different packaging. Do not delete historical sale lines 
 
 Production cleanup SQL, product IDs, snapshots, and database exports must not be committed.
 Only generic schema, application code, and synthetic regression fixtures belong in Git.
+
+## Product identity rollout
+
+Migration `0011_prevent_duplicate_products.sql` adds a nullable, unique product identity key.
+Legacy rows remain null so an upgraded database can apply the migration even when historical
+duplicates still need consolidation. The Worker compares Unicode-normalized name, colour, and
+size against both keyed and legacy rows; every new or edited product receives a key. This blocks
+new duplicates immediately without deleting or automatically merging historical records.

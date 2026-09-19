@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { productIdentityKey } from '../../server/product-identity';
 
 describe('inventory catalogue schema', () => {
   it('rejects repeated product identities atomically', async () => {
@@ -16,8 +17,8 @@ describe('inventory catalogue schema', () => {
       INSERT INTO products (
         name, colour, size, selling_price_minor, cost_price_minor,
         stock_quantity, set_stock_quantity, mrp_minor, location_id,
-        personal_use, import_source, import_row_number, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        personal_use, import_source, import_row_number, identity_key, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const statements = [1, 2].map((rowNumber) =>
@@ -34,12 +35,13 @@ describe('inventory catalogue schema', () => {
         0,
         'stock-july-2026',
         rowNumber,
+        productIdentityKey('Clear Bowl', 'Blue and transparent', '210 ml and 480 ml'),
         now,
         now,
       ),
     );
 
-    await expect(env.DB.batch(statements)).rejects.toThrow('idx_products_identity');
+    await expect(env.DB.batch(statements)).rejects.toThrow('products.identity_key');
 
     const duplicates = await env.DB.prepare(
       `SELECT id, stock_quantity, set_stock_quantity
@@ -51,6 +53,22 @@ describe('inventory catalogue schema', () => {
       .all<{ id: number; stock_quantity: number; set_stock_quantity: number }>();
 
     expect(duplicates.results).toHaveLength(0);
+  });
+
+  it('allows a schema upgrade while legacy duplicate rows have no identity key', async () => {
+    const now = new Date().toISOString();
+    const statements = [1, 2].map(() => env.DB.prepare(
+      `INSERT INTO products (name, selling_price_minor, stock_quantity, low_stock_level,
+         active, version, created_at, updated_at)
+       VALUES ('Legacy Duplicate', 100, 0, 0, 1, 1, ?, ?)`,
+    ).bind(now, now));
+
+    await env.DB.batch(statements);
+    const rows = await env.DB.prepare(
+      `SELECT id, identity_key FROM products WHERE name = 'Legacy Duplicate'`,
+    ).all<{ id: number; identity_key: string | null }>();
+    expect(rows.results).toHaveLength(2);
+    expect(rows.results.every((row) => row.identity_key === null)).toBe(true);
   });
 
   it('supports nullable colour and size plus fractional set stock', async () => {

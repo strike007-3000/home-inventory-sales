@@ -1,7 +1,7 @@
--- A product's identity is its name, colour, and size. Location, price,
--- packaging, stock, and status can change without making it a new product.
-CREATE UNIQUE INDEX idx_products_identity ON products (
-  lower(trim(name)),
-  lower(trim(coalesce(colour, ''))),
-  lower(trim(coalesce(size, '')))
-);
+-- The Worker generates this key with Unicode normalization. Keeping legacy
+-- rows nullable lets this migration succeed before historical duplicates are
+-- consolidated; all new and edited rows receive a key.
+ALTER TABLE products ADD COLUMN identity_key TEXT;
+
+CREATE UNIQUE INDEX idx_products_identity ON products(identity_key)
+  WHERE identity_key IS NOT NULL;

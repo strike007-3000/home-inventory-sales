@@ -10,6 +10,7 @@ import {
 } from './validation';
 
 import type { ImportCommitRequest } from '../shared/contracts';
+import { productIdentityKey } from './product-identity';
 
 // ============================================================================
 // Constants
@@ -119,10 +120,6 @@ function parseCsv(text: string): ParsedCsv {
 function normalizeSku(raw: string): string | null {
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeProductName(raw: string): string {
-  return raw.trim().toLowerCase();
 }
 
 // Strict non-negative integer parser (Requirement 8):
@@ -286,7 +283,7 @@ async function handleImportPreview(
       }
     }
 
-    const productKey = normalizeProductName(name);
+    const productKey = productIdentityKey(name, null, null);
     if (name) {
       const firstRow = seenProducts.get(productKey);
       if (firstRow !== undefined) {
@@ -325,13 +322,13 @@ async function handleImportPreview(
     }
 
     if (name && issues.length === 0) {
-      const conflict = await env.DB.prepare(
-        `SELECT id, name FROM products
-         WHERE lower(trim(name)) = lower(trim(?))
-           AND lower(trim(coalesce(colour, ''))) = ''
-           AND lower(trim(coalesce(size, ''))) = ''
-         LIMIT 1`,
-      ).bind(name).first<{ id: number; name: string }>();
+      const candidates = await env.DB.prepare(
+        `SELECT id, name, colour, size FROM products
+         WHERE identity_key = ? OR identity_key IS NULL`,
+      ).bind(productKey).all<{ id: number; name: string; colour: string | null; size: string | null }>();
+      const conflict = candidates.results.find(
+        (product) => productIdentityKey(product.name, product.colour, product.size) === productKey,
+      );
       if (conflict) {
         issues.push(`Product already exists in the database (ID ${conflict.id}: ${conflict.name})`);
       }
@@ -551,21 +548,22 @@ async function handleImportCommit(
     }
   }
 
-  const productNames = staged.results.map((row) => normalizeProductName(row.name));
-  if (new Set(productNames).size !== productNames.length) {
+  const productKeys = staged.results.map((row) => productIdentityKey(row.name, null, null));
+  if (new Set(productKeys).size !== productKeys.length) {
     return errorResponse('Duplicate products in import', 409);
   }
 
-  const productConflicts = await env.DB.prepare(
-    `SELECT id, name FROM products
-     WHERE lower(trim(coalesce(colour, ''))) = ''
-       AND lower(trim(coalesce(size, ''))) = ''
-       AND lower(trim(name)) IN (SELECT value FROM json_each(?))
-     LIMIT 1`,
-  ).bind(JSON.stringify(productNames)).first<{ id: number; name: string }>();
-  if (productConflicts) {
+  const productCandidates = await env.DB.prepare(
+    `SELECT id, name, colour, size FROM products
+     WHERE identity_key IN (SELECT value FROM json_each(?)) OR identity_key IS NULL`,
+  ).bind(JSON.stringify(productKeys))
+    .all<{ id: number; name: string; colour: string | null; size: string | null }>();
+  const productConflict = productCandidates.results.find(
+    (product) => productKeys.includes(productIdentityKey(product.name, product.colour, product.size)),
+  );
+  if (productConflict) {
     return errorResponse(
-      `A matching product already exists (ID ${productConflicts.id}: ${productConflicts.name})`,
+      `A matching product already exists (ID ${productConflict.id}: ${productConflict.name})`,
       409,
     );
   }
@@ -601,15 +599,15 @@ async function handleImportCommit(
       env.DB.prepare(
         `INSERT INTO products
            (sku, name, category, selling_price_minor, cost_price_minor,
-            stock_quantity, low_stock_level, active, version, created_at, updated_at)
-         SELECT ?, ?, ?, ?, NULL, ?, ?, ?, 1, ?, ?
+            stock_quantity, low_stock_level, active, identity_key, version, created_at, updated_at)
+         SELECT ?, ?, ?, ?, NULL, ?, ?, ?, ?, 1, ?, ?
          WHERE (
            SELECT COUNT(*) FROM import_staging
            WHERE request_id = ? AND consumed = 1 AND claim_token = ?
          ) = ?`,
       ).bind(
         sku, name, category, priceMinor, quantity, lowStockLevel,
-        active ? 1 : 0, now, now,
+        active ? 1 : 0, productIdentityKey(name, null, null), now, now,
         requestId, claimToken, staged.results.length,
       ),
     );
@@ -646,7 +644,10 @@ async function handleImportCommit(
       failures: [],
     });
   } catch (error) {
-    if (error instanceof Error && error.message.includes('idx_products_identity')) {
+    if (error instanceof Error && (
+      error.message.includes('idx_products_identity') ||
+      error.message.includes('UNIQUE constraint failed: products.identity_key')
+    )) {
       return errorResponse('A matching product was created before this import completed', 409);
     }
     return jsonResponse(

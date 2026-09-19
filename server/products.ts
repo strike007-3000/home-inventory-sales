@@ -8,6 +8,7 @@ import {
   requireJsonBody,
 } from './validation';
 import type { LocationDTO, ProductDTO, CreateProductRequest, UpdateProductRequest } from '../shared/contracts';
+import { productIdentityKey } from './product-identity';
 
 const PRODUCT_SELECT = `
   SELECT products.*,
@@ -46,7 +47,8 @@ function isSkuConstraintError(error: unknown): boolean {
 
 function isProductIdentityConstraintError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : '';
-  return message.includes('idx_products_identity');
+  return message.includes('idx_products_identity') ||
+    message.includes('UNIQUE constraint failed: products.identity_key');
 }
 
 function productErrorResponse(error: unknown): Response {
@@ -102,16 +104,16 @@ async function rejectDuplicateProduct(
   size: string | null,
   excludeId?: number,
 ): Promise<void> {
-  const existing = await env.DB.prepare(
-    `SELECT id, name FROM products
-     WHERE lower(trim(name)) = lower(trim(?))
-       AND lower(trim(coalesce(colour, ''))) = lower(trim(coalesce(?, '')))
-       AND lower(trim(coalesce(size, ''))) = lower(trim(coalesce(?, '')))
-       ${excludeId === undefined ? '' : 'AND id != ?'}
-     LIMIT 1`,
-  ).bind(...(excludeId === undefined
-    ? [name, colour, size]
-    : [name, colour, size, excludeId])).first<{ id: number; name: string }>();
+  const identityKey = productIdentityKey(name, colour, size);
+  const candidates = await env.DB.prepare(
+    `SELECT id, name, colour, size FROM products
+     WHERE (identity_key = ? OR identity_key IS NULL)
+       ${excludeId === undefined ? '' : 'AND id != ?'}`,
+  ).bind(...(excludeId === undefined ? [identityKey] : [identityKey, excludeId]))
+    .all<{ id: number; name: string; colour: string | null; size: string | null }>();
+  const existing = candidates.results.find(
+    (product) => productIdentityKey(product.name, product.colour, product.size) === identityKey,
+  );
 
   if (existing) {
     throw new ProductDomainError(
@@ -276,9 +278,9 @@ async function createProduct(
     `INSERT INTO products (
        sku, name, category, colour, size, selling_price_minor,
        cost_price_minor, stock_quantity, set_stock_quantity, units_per_set, mrp_minor,
-       low_stock_level, location_id, personal_use, active,
+       low_stock_level, location_id, personal_use, active, identity_key,
        created_at, updated_at, version
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
   )
     .bind(
       sku,
@@ -296,6 +298,7 @@ async function createProduct(
       locationId,
       personalUse ? 1 : 0,
       request.active ? 1 : 0,
+      productIdentityKey(name, colour, size),
       now,
       now
     )
@@ -424,7 +427,7 @@ async function updateProduct(
     `UPDATE products
      SET sku = ?, name = ?, category = ?, colour = ?, size = ?,
          selling_price_minor = ?, cost_price_minor = ?, mrp_minor = ?,
-         units_per_set = ?, low_stock_level = ?, location_id = ?, personal_use = ?, active = ?,
+         units_per_set = ?, low_stock_level = ?, location_id = ?, personal_use = ?, active = ?, identity_key = ?,
          version = version + 1, updated_at = ?
      WHERE id = ? AND version = ?`
   )
@@ -442,6 +445,7 @@ async function updateProduct(
       locationId,
       personalUse ? 1 : 0,
       request.active ? 1 : 0,
+      productIdentityKey(name, colour, size),
       now,
       id,
       expectedVersion
