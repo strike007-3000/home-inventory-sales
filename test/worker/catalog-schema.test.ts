@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 
 describe('inventory catalogue schema', () => {
-  it('keeps product identity internal while allowing repeated descriptive variants', async () => {
+  it('rejects repeated product identities atomically', async () => {
     const location = await env.DB.prepare(
       'SELECT id FROM locations WHERE name = ? COLLATE NOCASE',
     )
@@ -39,7 +39,7 @@ describe('inventory catalogue schema', () => {
       ),
     );
 
-    await env.DB.batch(statements);
+    await expect(env.DB.batch(statements)).rejects.toThrow('idx_products_identity');
 
     const duplicates = await env.DB.prepare(
       `SELECT id, stock_quantity, set_stock_quantity
@@ -50,10 +50,7 @@ describe('inventory catalogue schema', () => {
       .bind('Clear Bowl', 'Blue and transparent', '210 ml and 480 ml')
       .all<{ id: number; stock_quantity: number; set_stock_quantity: number }>();
 
-    expect(duplicates.results).toHaveLength(2);
-    expect(duplicates.results[0]?.id).not.toBe(duplicates.results[1]?.id);
-    expect(duplicates.results[0]?.stock_quantity).toBe(3);
-    expect(duplicates.results[0]?.set_stock_quantity).toBe(2);
+    expect(duplicates.results).toHaveLength(0);
   });
 
   it('supports nullable colour and size plus fractional set stock', async () => {

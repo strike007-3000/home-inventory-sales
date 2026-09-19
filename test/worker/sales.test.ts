@@ -7,6 +7,7 @@ const PASSWORD = 'worker-test-password';
 let session = '';
 let csrf = '';
 let requestNumber = 0;
+let productNumber = 0;
 
 function request(path: string, init: RequestInit = {}): Request {
   requestNumber += 1;
@@ -33,8 +34,8 @@ async function addProduct(quantity = 8, setStock = 2, unitsPerSet: number | null
   const result = await env.DB.prepare(
     `INSERT INTO products (name, selling_price_minor, stock_quantity, set_stock_quantity,
       units_per_set, low_stock_level, active, version, created_at, updated_at)
-     VALUES ('Demo Set', 15000, ?, ?, ?, 1, 1, 1, ?, ?)`,
-  ).bind(quantity, setStock, unitsPerSet, now, now).run();
+     VALUES (?, 15000, ?, ?, ?, 1, 1, 1, ?, ?)`,
+  ).bind(`Demo Set ${++productNumber}`, quantity, setStock, unitsPerSet, now, now).run();
   return Number(result.meta.last_row_id);
 }
 

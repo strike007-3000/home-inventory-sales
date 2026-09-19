@@ -44,12 +44,20 @@ function isSkuConstraintError(error: unknown): boolean {
     message.includes('idx_products_sku');
 }
 
+function isProductIdentityConstraintError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : '';
+  return message.includes('idx_products_identity');
+}
+
 function productErrorResponse(error: unknown): Response {
   if (error instanceof ProductDomainError) {
     return errorResponse(error.message, error.status);
   }
   if (isSkuConstraintError(error)) {
     return errorResponse('A product with this SKU already exists', 409);
+  }
+  if (isProductIdentityConstraintError(error)) {
+    return errorResponse('A matching product already exists. Edit it or use Change stock.', 409);
   }
   return errorResponse('Internal server error', 500);
 }
@@ -85,6 +93,32 @@ async function validateLocation(env: Env, locationId: number | null): Promise<vo
     .bind(locationId)
     .first();
   if (!location) throw new ProductDomainError('Location not found', 400);
+}
+
+async function rejectDuplicateProduct(
+  env: Env,
+  name: string,
+  colour: string | null,
+  size: string | null,
+  excludeId?: number,
+): Promise<void> {
+  const existing = await env.DB.prepare(
+    `SELECT id, name FROM products
+     WHERE lower(trim(name)) = lower(trim(?))
+       AND lower(trim(coalesce(colour, ''))) = lower(trim(coalesce(?, '')))
+       AND lower(trim(coalesce(size, ''))) = lower(trim(coalesce(?, '')))
+       ${excludeId === undefined ? '' : 'AND id != ?'}
+     LIMIT 1`,
+  ).bind(...(excludeId === undefined
+    ? [name, colour, size]
+    : [name, colour, size, excludeId])).first<{ id: number; name: string }>();
+
+  if (existing) {
+    throw new ProductDomainError(
+      `A matching product already exists (ID ${existing.id}: ${existing.name}). Edit it or use Change stock.`,
+      409,
+    );
+  }
 }
 
 // ============================================================================
@@ -235,6 +269,8 @@ async function createProduct(
     }
   }
 
+  await rejectDuplicateProduct(env, name, colour, size);
+
   // Insert product
   const result = await env.DB.prepare(
     `INSERT INTO products (
@@ -380,6 +416,8 @@ async function updateProduct(
       throw new ProductDomainError('A product with this SKU already exists', 409);
     }
   }
+
+  await rejectDuplicateProduct(env, name, colour, size, id);
 
   // Update product
   const result = await env.DB.prepare(

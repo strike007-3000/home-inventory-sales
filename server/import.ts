@@ -121,6 +121,10 @@ function normalizeSku(raw: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizeProductName(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
 // Strict non-negative integer parser (Requirement 8):
 // Only accepts decimal integers. Rejects: empty, whitespace-only, decimals,
 // scientific notation (1e3), hex (0x10), leading plus (+10), negative (-1),
@@ -224,6 +228,7 @@ async function handleImportPreview(
 
   // Track exact duplicate row signatures
   const seenSigs = new Map<string, number>(); // normalized sig → first row number
+  const seenProducts = new Map<string, number>(); // CSV has no colour or size columns
 
   for (let i = 0; i < dataRows.length; i++) {
     const rowNumber = i + 2; // 1-indexed, header is row 1
@@ -281,6 +286,16 @@ async function handleImportPreview(
       }
     }
 
+    const productKey = normalizeProductName(name);
+    if (name) {
+      const firstRow = seenProducts.get(productKey);
+      if (firstRow !== undefined) {
+        issues.push(`Duplicate product — first seen in row ${firstRow}`);
+      } else {
+        seenProducts.set(productKey, rowNumber);
+      }
+    }
+
     // Exact duplicate row
     const sig = [
       name.toLowerCase(),
@@ -306,6 +321,19 @@ async function handleImportPreview(
         .first();
       if (conflict) {
         issues.push(`SKU "${sku}" already exists in the database`);
+      }
+    }
+
+    if (name && issues.length === 0) {
+      const conflict = await env.DB.prepare(
+        `SELECT id, name FROM products
+         WHERE lower(trim(name)) = lower(trim(?))
+           AND lower(trim(coalesce(colour, ''))) = ''
+           AND lower(trim(coalesce(size, ''))) = ''
+         LIMIT 1`,
+      ).bind(name).first<{ id: number; name: string }>();
+      if (conflict) {
+        issues.push(`Product already exists in the database (ID ${conflict.id}: ${conflict.name})`);
       }
     }
 
@@ -523,6 +551,25 @@ async function handleImportCommit(
     }
   }
 
+  const productNames = staged.results.map((row) => normalizeProductName(row.name));
+  if (new Set(productNames).size !== productNames.length) {
+    return errorResponse('Duplicate products in import', 409);
+  }
+
+  const productConflicts = await env.DB.prepare(
+    `SELECT id, name FROM products
+     WHERE lower(trim(coalesce(colour, ''))) = ''
+       AND lower(trim(coalesce(size, ''))) = ''
+       AND lower(trim(name)) IN (SELECT value FROM json_each(?))
+     LIMIT 1`,
+  ).bind(JSON.stringify(productNames)).first<{ id: number; name: string }>();
+  if (productConflicts) {
+    return errorResponse(
+      `A matching product already exists (ID ${productConflicts.id}: ${productConflicts.name})`,
+      409,
+    );
+  }
+
   // ---- Build atomic batch ----
   const now = new Date().toISOString();
   const claimToken = crypto.randomUUID();
@@ -598,7 +645,10 @@ async function handleImportCommit(
       inserted: staged.results.length,
       failures: [],
     });
-  } catch (_error) {
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('idx_products_identity')) {
+      return errorResponse('A matching product was created before this import completed', 409);
+    }
     return jsonResponse(
       {
         success: false,
