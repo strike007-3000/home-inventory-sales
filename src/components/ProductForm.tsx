@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 import type { LocationDTO, ProductDTO } from '../../shared/contracts';
 import { formatInr, validateQuantity, validateWholeNumber } from '../domain';
 import type { ProductFormData } from '../hooks/useProducts';
@@ -59,6 +59,7 @@ export function ProductForm({
   const [loading, setLoading] = useState(false);
   const [checkingExisting, setCheckingExisting] = useState(false);
   const [existingCheck, setExistingCheck] = useState<{ product: ProductDTO | null; error?: string } | null>(null);
+  const existingCheckRevision = useRef(0);
   const [cpDiscount, setCpDiscount] = useState(() => {
     const mrp = initialData?.mrpPaise;
     const cp = initialData?.consultantPricePaise;
@@ -74,7 +75,11 @@ export function ProductForm({
 
   const setField = <K extends keyof ProductFormData>(field: K, value: ProductFormData[K]) => {
     setFormData((previous) => ({ ...previous, [field]: value }));
-    if (field === 'name' || field === 'colour' || field === 'size') setExistingCheck(null);
+    if (field === 'name' || field === 'colour' || field === 'size') {
+      existingCheckRevision.current += 1;
+      setExistingCheck(null);
+      setCheckingExisting(false);
+    }
     if (errors[field]) {
       setErrors((previous) => {
         const next = { ...previous };
@@ -89,6 +94,7 @@ export function ProductForm({
       setErrors((previous) => ({ ...previous, name: 'Enter a product name before checking' }));
       return;
     }
+    const revision = ++existingCheckRevision.current;
     setCheckingExisting(true);
     setExistingCheck(null);
     try {
@@ -98,11 +104,17 @@ export function ProductForm({
         size: formData.size ?? '',
       });
       const result = await apiGetJson<{ exists: boolean; product: ProductDTO | null }>(`/products/check-existing?${params}`);
-      setExistingCheck({ product: result.product });
+      if (existingCheckRevision.current === revision) {
+        setExistingCheck({ product: result.product });
+      }
     } catch (error) {
-      setExistingCheck({ product: null, error: error instanceof Error ? error.message : 'Could not check products' });
+      if (existingCheckRevision.current === revision) {
+        setExistingCheck({ product: null, error: error instanceof Error ? error.message : 'Could not check products' });
+      }
     } finally {
-      setCheckingExisting(false);
+      if (existingCheckRevision.current === revision) {
+        setCheckingExisting(false);
+      }
     }
   };
 
