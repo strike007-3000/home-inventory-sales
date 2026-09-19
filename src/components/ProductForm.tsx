@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import type { LocationDTO } from '../../shared/contracts';
 import { validateQuantity, validateWholeNumber } from '../domain';
 import type { ProductFormData } from '../hooks/useProducts';
+import { ChevronLeftIcon } from '../icons';
 
 interface ProductFormProps {
   initialData?: Partial<ProductFormData>;
@@ -15,6 +16,11 @@ interface ProductFormProps {
 
 export function formatRupeesInput(paise: number | null): string {
   return paise !== null ? String(paise / 100) : '';
+}
+
+export function calculateDiscountedPrice(mrpPaise: number | null, discountPercent: number): number | null {
+  if (mrpPaise === null || !Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) return null;
+  return Math.round(mrpPaise * (100 - discountPercent) / 100);
 }
 
 function parseRupees(value: string): number | null {
@@ -50,6 +56,14 @@ export function ProductForm({
   }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [cpDiscount, setCpDiscount] = useState(() => {
+    const mrp = initialData?.mrpPaise;
+    const cp = initialData?.consultantPricePaise;
+    const discount = mrp && cp !== null && cp !== undefined
+      ? Math.round((1 - cp / mrp) * 10_000) / 100
+      : 24;
+    return String(discount >= 0 && discount <= 100 ? discount : 24);
+  });
   const [priceText, setPriceText] = useState(() => ({
     pricePaise: formatRupeesInput(initialData?.pricePaise ?? 0),
     mrpPaise: formatRupeesInput(initialData?.mrpPaise ?? null),
@@ -137,7 +151,15 @@ export function ProductForm({
         onInput={(event) => {
           const value = (event.target as HTMLInputElement).value;
           if (keepRawText) setPriceText((previous) => ({ ...previous, [field]: value }));
-          setField(field, parseRupees(value));
+          const paise = parseRupees(value);
+          setField(field, paise);
+          if (field === 'mrpPaise') {
+            const calculated = calculateDiscountedPrice(paise, cpDiscount.trim() === '' ? Number.NaN : Number(cpDiscount));
+            if (calculated !== null) setField('consultantPricePaise', calculated);
+          } else if (field === 'consultantPricePaise' && formData.mrpPaise && paise !== null) {
+            const discount = Math.round((1 - paise / formData.mrpPaise) * 10_000) / 100;
+            if (discount >= 0 && discount <= 100) setCpDiscount(String(discount));
+          }
         }}
         onFocus={(event) => {
           if (keepRawText) (event.target as HTMLInputElement).select();
@@ -159,6 +181,9 @@ export function ProductForm({
 
   return (
     <form class="card" onSubmit={handleSubmit}>
+      <button type="button" class="btn btn-ghost btn-sm mb-4" onClick={onCancel} disabled={loading}>
+        <ChevronLeftIcon /> Back to products
+      </button>
       <h2 class="card-title mb-4">{isEditing ? 'Edit product' : 'Create product'}</h2>
 
       {errors.submit && <div class="error-message mb-4" role="alert">{errors.submit}</div>}
@@ -205,7 +230,30 @@ export function ProductForm({
         {priceInput('mrp', 'MRP per Stock/set', 'mrpPaise')}
         {priceInput('srp', 'SRP per Stock/set', 'pricePaise', true)}
       </div>
-      {priceInput('cp', 'Consultant price (CP) per Stock/set', 'consultantPricePaise')}
+      <div class="grid grid-cols-2 gap-4">
+        <div class="form-group">
+          <label class="form-label" for="cpDiscount">CP discount from MRP (%)</label>
+          <input
+            id="cpDiscount"
+            type="number"
+            class="form-input"
+            value={cpDiscount}
+            onInput={(event) => {
+              const value = (event.target as HTMLInputElement).value;
+              setCpDiscount(value);
+              const calculated = calculateDiscountedPrice(formData.mrpPaise, value.trim() === '' ? Number.NaN : Number(value));
+              if (calculated !== null) setField('consultantPricePaise', calculated);
+            }}
+            min="0"
+            max="100"
+            step="0.01"
+            inputMode="decimal"
+            disabled={loading}
+          />
+          <span class="form-hint block">Defaults to 24% less than MRP.</span>
+        </div>
+        {priceInput('cp', 'Consultant price (CP) per Stock/set', 'consultantPricePaise')}
+      </div>
 
       <div class="grid grid-cols-2 gap-4">
         <div class="form-group">
