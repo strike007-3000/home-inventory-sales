@@ -169,6 +169,7 @@ button.card { font: inherit; color: inherit; }
 .product-inventory > div + div { border-left: 1px solid var(--line); }
 .product-inventory span { color: var(--muted); font-size: .72rem; font-weight: 650; }
 .product-inventory strong { font-size: .95rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.product-inventory .product-piece-price { color: var(--muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
 .product-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .product-actions .btn { width: 100%; min-height: 48px; padding-inline: 10px; }
 .product-actions .product-toggle { grid-column: 1 / -1; color: var(--muted); }
