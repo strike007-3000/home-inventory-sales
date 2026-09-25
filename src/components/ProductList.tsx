@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { useProducts, useCreateProduct, useUpdateProduct, useToggleProduct, useLocations, type ProductFormData } from '../hooks/useProducts';
-import { formatInr, getProductSetupIssue, needsUnitsPerSetConfiguration } from '../domain';
+import { calculateProportionalLineTotal, formatInr, getProductSetupIssue, needsUnitsPerSetConfiguration } from '../domain';
 import { ProductForm } from './ProductForm';
 import { useStockChange } from '../hooks/useStock';
 import type { Product } from '../domain';
@@ -436,6 +436,9 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
                 {filteredProducts.map((product) => {
                   const isSelected = selectedProductId === product.id;
                   const setupIssue = getProductSetupIssue(product);
+                  const piecePrice = product.unitsPerSet
+                    ? calculateProportionalLineTotal(product.pricePaise, 1, product.unitsPerSet)
+                    : null;
                   return (
                     <article
                       key={product.id}
@@ -484,7 +487,11 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
                     <div class="product-inventory">
                       <div><span>QTY</span><strong>{product.quantity}</strong></div>
                       <div><span>Stock/set</span><strong>{product.setStockQuantity ?? 0}</strong></div>
-                      <div><span>SRP</span><strong>{formatInr(product.pricePaise)}</strong></div>
+                      <div>
+                        <span>SRP / set</span>
+                        <strong>{formatInr(product.pricePaise)}</strong>
+                        {piecePrice?.ok && <small class="product-piece-price">{formatInr(piecePrice.value)} / piece</small>}
+                      </div>
                       <div><span>MRP</span><strong>{formatInr(product.mrpPaise ?? product.pricePaise)}</strong></div>
                     </div>
 
