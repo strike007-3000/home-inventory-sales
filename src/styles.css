@@ -164,11 +164,12 @@ button.card { font: inherit; color: inherit; }
 .product-meta-token { display: inline-flex; max-width: 100%; padding: 3px 7px; border-radius: 6px; background: var(--surface-subtle); color: var(--muted); overflow-wrap: anywhere; }
 .product-status-badges { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
 .status-chip-muted { color: var(--muted); background: var(--surface-subtle); }
-.product-inventory { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid var(--line); }
+.product-inventory { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-block: 1px solid var(--line); }
 .product-inventory > div { min-width: 0; padding: 10px 8px; display: grid; gap: 2px; }
 .product-inventory > div + div { border-left: 1px solid var(--line); }
 .product-inventory span { color: var(--muted); font-size: .72rem; font-weight: 650; }
 .product-inventory strong { font-size: .95rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.product-inventory .product-piece-price { color: var(--muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
 .product-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .product-actions .btn { width: 100%; min-height: 48px; padding-inline: 10px; }
 .product-actions .product-toggle { grid-column: 1 / -1; color: var(--muted); }
@@ -183,6 +184,16 @@ button.card { font: inherit; color: inherit; }
 .sale-detail-header { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .sale-detail-header h1 { overflow-wrap: anywhere; }
 .sale-edit-button { width: 100%; }
+.receipt-item-head, .receipt-item-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; }
+.receipt-item-head { display: none; padding: 0 0 9px; color: var(--muted); font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.receipt-item-head-gift, .receipt-item-row-gift { grid-template-columns: minmax(0, 1fr) auto; }
+.receipt-item-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.receipt-item-row:last-child { border-bottom: 0; }
+.receipt-item-qty { grid-column: 1; grid-row: 2; }
+.receipt-line-total { grid-column: 2; grid-row: 1; }
+.receipt-number-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.receipt-mobile-label { display: inline; }
+.receipt-thanks { display: none; }
 
 .sticky-action { position: fixed; z-index: 20; left: 0; right: 0; bottom: calc(var(--bottom-nav) + env(safe-area-inset-bottom, 0px)); padding: 10px 14px; border-top: 1px solid var(--line); background: rgba(255,255,255,.97); }
 .sticky-action-inner { width: min(100%, 760px); margin: auto; }
@@ -209,6 +220,7 @@ button.card { font: inherit; color: inherit; }
 .empty-state-title { margin-bottom: 5px; color: var(--ink); font-size: 1.05rem; }
 .empty-state-message { margin: 0; }
 .error-message { padding: 13px 14px; border-radius: 10px; background: var(--red-soft); color: var(--red); border: 1px solid var(--red); font-weight: 600; }
+.success-message { padding: 13px 14px; border-radius: 10px; background: var(--green-soft); color: var(--green); border: 1px solid rgba(20,122,82,.3); font-weight: 600; }
 .divider-top { border-top: 1px solid var(--line); }
 
 .text-center{text-align:center}.text-left{text-align:left}.text-right{text-align:right}
@@ -326,6 +338,11 @@ button.card { font: inherit; color: inherit; }
   .stock-change-inputs { grid-template-columns: 1fr 1fr; gap: 14px; }
   .sale-detail-header { flex-direction: row; justify-content: space-between; gap: 24px; }
   .sale-edit-button { width: auto; flex: 0 0 auto; white-space: nowrap; }
+  .receipt-item-head, .receipt-item-row { grid-template-columns: minmax(0, 1fr) 52px 110px; gap: 12px; }
+  .receipt-item-head { display: grid; }
+  .receipt-item-head-gift, .receipt-item-row-gift { grid-template-columns: minmax(0, 1fr) 52px; }
+  .receipt-item-qty, .receipt-line-total { grid-column: auto; grid-row: auto; }
+  .receipt-mobile-label { display: none; }
 }
 
 @media (min-width: 1024px) {
@@ -363,6 +380,90 @@ button.card { font: inherit; color: inherit; }
   .product-actions .product-toggle { grid-column: auto; }
 }
 
+.status-chip-purple { color: #7e22ce; background: #f3e8ff; }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .app {
+    padding: 0 !important;
+  }
+  .top-header-bar,
+  .nav,
+  .sticky-action,
+  .non-printable,
+  button,
+  .sales-search-form,
+  .sales-filter-pills {
+    display: none !important;
+  }
+  .main {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .card {
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    margin-bottom: 12px !important;
+    background: #ffffff !important;
+  }
+  .printable-region {
+    display: block !important;
+    padding: 12mm 14mm !important;
+    box-decoration-break: clone;
+  }
+  .sale-detail-header {
+    padding-bottom: 18px;
+    border-bottom: 2px solid #000000;
+  }
+  .receipt-items-card,
+  .receipt-totals-card {
+    border-left: 0 !important;
+    border-right: 0 !important;
+    border-radius: 0 !important;
+  }
+  .receipt-item-head {
+    display: grid;
+  }
+  .receipt-item-head, .receipt-item-row {
+    grid-template-columns: minmax(0, 1fr) 52px 110px;
+    gap: 12px;
+  }
+  .receipt-item-head-gift, .receipt-item-row-gift {
+    grid-template-columns: minmax(0, 1fr) 52px;
+  }
+  .receipt-item-qty, .receipt-line-total {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .receipt-mobile-label {
+    display: none;
+  }
+  .receipt-thanks {
+    display: block;
+    margin-top: 28px;
+    color: #646a73;
+    font-size: .78rem;
+    text-align: center;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

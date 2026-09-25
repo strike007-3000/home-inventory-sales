@@ -1,7 +1,9 @@
-import { useState } from 'preact/hooks';
-import type { LocationDTO } from '../../shared/contracts';
-import { validateQuantity, validateWholeNumber } from '../domain';
+import { useRef, useState } from 'preact/hooks';
+import type { LocationDTO, ProductDTO } from '../../shared/contracts';
+import { formatInr, validateQuantity, validateWholeNumber } from '../domain';
 import type { ProductFormData } from '../hooks/useProducts';
+import { ChevronLeftIcon } from '../icons';
+import { apiGetJson } from '../api';
 
 interface ProductFormProps {
   initialData?: Partial<ProductFormData>;
@@ -13,8 +15,13 @@ interface ProductFormProps {
   onChangeStock?: () => void;
 }
 
-function rupeesValue(paise: number | null): string {
-  return paise !== null ? (paise / 100).toFixed(2) : '';
+export function formatRupeesInput(paise: number | null): string {
+  return paise !== null ? String(paise / 100) : '';
+}
+
+export function calculateDiscountedPrice(basePricePaise: number | null, discountPercent: number): number | null {
+  if (basePricePaise === null || !Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) return null;
+  return Math.round(basePricePaise * (100 - discountPercent) / 100);
 }
 
 function parseRupees(value: string): number | null {
@@ -50,15 +57,64 @@ export function ProductForm({
   }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [checkingExisting, setCheckingExisting] = useState(false);
+  const [existingCheck, setExistingCheck] = useState<{ product: ProductDTO | null; error?: string } | null>(null);
+  const existingCheckRevision = useRef(0);
+  const [cpDiscount, setCpDiscount] = useState(() => {
+    const srp = initialData?.pricePaise;
+    const cp = initialData?.consultantPricePaise;
+    const discount = srp && cp !== null && cp !== undefined
+      ? Math.round((1 - cp / srp) * 10_000) / 100
+      : 24;
+    return String(discount >= 0 && discount <= 100 ? discount : 24);
+  });
+  const [priceText, setPriceText] = useState(() => ({
+    pricePaise: formatRupeesInput(initialData?.pricePaise ?? 0),
+    mrpPaise: formatRupeesInput(initialData?.mrpPaise ?? null),
+  }));
 
   const setField = <K extends keyof ProductFormData>(field: K, value: ProductFormData[K]) => {
     setFormData((previous) => ({ ...previous, [field]: value }));
+    if (field === 'name' || field === 'colour' || field === 'size') {
+      existingCheckRevision.current += 1;
+      setExistingCheck(null);
+      setCheckingExisting(false);
+    }
     if (errors[field]) {
       setErrors((previous) => {
         const next = { ...previous };
         delete next[field];
         return next;
       });
+    }
+  };
+
+  const checkExistingProduct = async () => {
+    if (!formData.name.trim()) {
+      setErrors((previous) => ({ ...previous, name: 'Enter a product name before checking' }));
+      return;
+    }
+    const revision = ++existingCheckRevision.current;
+    setCheckingExisting(true);
+    setExistingCheck(null);
+    try {
+      const params = new URLSearchParams({
+        name: formData.name,
+        colour: formData.colour ?? '',
+        size: formData.size ?? '',
+      });
+      const result = await apiGetJson<{ exists: boolean; product: ProductDTO | null }>(`/products/check-existing?${params}`);
+      if (existingCheckRevision.current === revision) {
+        setExistingCheck({ product: result.product });
+      }
+    } catch (error) {
+      if (existingCheckRevision.current === revision) {
+        setExistingCheck({ product: null, error: error instanceof Error ? error.message : 'Could not check products' });
+      }
+    } finally {
+      if (existingCheckRevision.current === revision) {
+        setCheckingExisting(false);
+      }
     }
   };
 
@@ -118,7 +174,9 @@ export function ProductForm({
     label: string,
     field: 'pricePaise' | 'mrpPaise' | 'consultantPricePaise',
     required = false,
-  ) => (
+  ) => {
+    const keepRawText = field === 'pricePaise' || field === 'mrpPaise';
+    return (
     <div class="form-group">
       <label class="form-label" for={id}>
         {label} (₹){required ? <span class="required-asterisk">*</span> : ''}
@@ -127,21 +185,43 @@ export function ProductForm({
         id={id}
         type="number"
         class={`form-input ${errors[field] ? 'form-input-error' : ''}`}
-        value={rupeesValue(formData[field])}
-        onInput={(event) => setField(field, parseRupees((event.target as HTMLInputElement).value))}
+        value={keepRawText ? priceText[field] : formatRupeesInput(formData[field])}
+        onInput={(event) => {
+          const value = (event.target as HTMLInputElement).value;
+          if (keepRawText) setPriceText((previous) => ({ ...previous, [field]: value }));
+          const paise = parseRupees(value);
+          setField(field, paise);
+          if (field === 'pricePaise') {
+            const calculated = calculateDiscountedPrice(paise, cpDiscount.trim() === '' ? Number.NaN : Number(cpDiscount));
+            if (calculated !== null) setField('consultantPricePaise', calculated);
+          } else if (field === 'consultantPricePaise' && formData.pricePaise && paise !== null) {
+            const discount = Math.round((1 - paise / formData.pricePaise) * 10_000) / 100;
+            if (discount >= 0 && discount <= 100) setCpDiscount(String(discount));
+          }
+        }}
+        onFocus={(event) => {
+          if (keepRawText) (event.target as HTMLInputElement).select();
+        }}
+        onBlur={() => {
+          if (keepRawText) setPriceText((previous) => ({ ...previous, [field]: formatRupeesInput(formData[field]) }));
+        }}
         min="0"
         step="0.01"
         inputMode="decimal"
-        placeholder="0.00"
+        placeholder="0"
         required={required}
         disabled={loading}
       />
       {errors[field] && <span class="text-error text-sm mt-1 block">{errors[field]}</span>}
     </div>
-  );
+    );
+  };
 
   return (
     <form class="card" onSubmit={handleSubmit}>
+      <button type="button" class="btn btn-ghost btn-sm mb-4" onClick={onCancel} disabled={loading}>
+        <ChevronLeftIcon /> Back to products
+      </button>
       <h2 class="card-title mb-4">{isEditing ? 'Edit product' : 'Create product'}</h2>
 
       {errors.submit && <div class="error-message mb-4" role="alert">{errors.submit}</div>}
@@ -173,6 +253,31 @@ export function ProductForm({
         </div>
       </div>
 
+      {!isEditing && (
+        <div class="form-group">
+          <button
+            type="button"
+            class="btn btn-soft-blue w-full"
+            onClick={() => void checkExistingProduct()}
+            disabled={loading || checkingExisting || !formData.name.trim()}
+          >
+            {checkingExisting ? 'Checking…' : 'Check if product exists'}
+          </button>
+          {existingCheck?.error && <div class="error-message mt-2" role="alert">{existingCheck.error}</div>}
+          {existingCheck && !existingCheck.error && existingCheck.product && (
+            <div class="error-message mt-2" role="status">
+              Product already exists: {existingCheck.product.name}
+              {(existingCheck.product.colour || existingCheck.product.size) && ` · ${[existingCheck.product.colour, existingCheck.product.size].filter(Boolean).join(' · ')}`}
+              {' · '}QTY {existingCheck.product.quantity} · Stock/set {existingCheck.product.setStockQuantity} · SRP {formatInr(existingCheck.product.pricePaise)}
+              {!existingCheck.product.active && ' · Inactive'}
+            </div>
+          )}
+          {existingCheck && !existingCheck.error && !existingCheck.product && (
+            <div class="success-message mt-2" role="status">No matching product found. You can continue.</div>
+          )}
+        </div>
+      )}
+
       <div class="grid grid-cols-2 gap-4">
         <div class="form-group">
           <label class="form-label" for="sku">SKU (optional)</label>
@@ -188,7 +293,30 @@ export function ProductForm({
         {priceInput('mrp', 'MRP per Stock/set', 'mrpPaise')}
         {priceInput('srp', 'SRP per Stock/set', 'pricePaise', true)}
       </div>
-      {priceInput('cp', 'Consultant price (CP) per Stock/set', 'consultantPricePaise')}
+      <div class="grid grid-cols-2 gap-4">
+        <div class="form-group">
+          <label class="form-label" for="cpDiscount">CP discount from SRP (%)</label>
+          <input
+            id="cpDiscount"
+            type="number"
+            class="form-input"
+            value={cpDiscount}
+            onInput={(event) => {
+              const value = (event.target as HTMLInputElement).value;
+              setCpDiscount(value);
+              const calculated = calculateDiscountedPrice(formData.pricePaise, value.trim() === '' ? Number.NaN : Number(value));
+              if (calculated !== null) setField('consultantPricePaise', calculated);
+            }}
+            min="0"
+            max="100"
+            step="0.01"
+            inputMode="decimal"
+            disabled={loading}
+          />
+          <span class="form-hint block">Defaults to 24% less than SRP.</span>
+        </div>
+        {priceInput('cp', 'Consultant price (CP) per Stock/set', 'consultantPricePaise')}
+      </div>
 
       <div class="grid grid-cols-2 gap-4">
         <div class="form-group">
@@ -271,7 +399,7 @@ export function ProductForm({
 
       <div class="flex gap-3 mt-6">
         <button type="button" class="btn btn-secondary flex-1" onClick={onCancel} disabled={loading}>Cancel</button>
-        <button type="submit" class="btn btn-primary flex-1" disabled={loading}>{loading ? 'Saving…' : isEditing ? 'Save changes' : 'Create product'}</button>
+        <button type="submit" class="btn btn-primary flex-1" disabled={loading || (!isEditing && Boolean(existingCheck?.product))}>{loading ? 'Saving…' : isEditing ? 'Save changes' : 'Create product'}</button>
       </div>
     </form>
   );

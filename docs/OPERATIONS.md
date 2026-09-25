@@ -6,6 +6,10 @@ Migration `0008_units_per_set.sql` infers Pieces in one set only when the existi
 
 Use Products → **Needs setup** to list the same active products counted by the Dashboard warning. Each result can be corrected through **Edit details**.
 
+## Gift sales and payment corrections migration
+
+Migration `0009_gift_sales_and_payment_corrections.sql` adds `is_gift` (defaulting to 0/false) to existing sales without reclassifying any existing records. It also creates the `sale_payment_corrections` audit table for per-payment method corrections.
+
 ## Dependency updates
 
 Dependabot checks npm dependencies twice monthly, on the 1st and 16th, using `.github/dependabot.yml`. Vulnerability alerts and automatic security-update pull requests remain enabled in the repository security settings.
@@ -94,3 +98,27 @@ npx wrangler d1 migrations list YOUR_D1_DATABASE --remote
 ## Backup and recovery
 
 Cloudflare D1 is the production system of record. User-facing export/restore is not implemented yet, so operational backup and restoration procedures remain a known gap. Do not describe committed migrations as a backup of business data: they restore schema only.
+
+## Product consolidation
+
+Deploy cancellation support for multiple historical lines per product before consolidating products.
+Keep sale items, prices, packaging snapshots, payments, and original stock movements intact;
+only repoint their product references to the canonical product. Cancellation groups by product
+and converts historical set deltas into the current pieces-per-set units.
+
+Use `product_consolidation_audit` to retain full before/after evidence, original reference mappings,
+and the reason for each operation inside D1. Capture a Time Travel bookmark first. Run the
+cleanup atomically with assertions on expected versions and history, and record explicit stock
+corrections after confirming physical stock. Preserve original set-unit context in movement notes
+when the products used different packaging. Do not delete historical sale lines or payment records.
+
+Production cleanup SQL, product IDs, snapshots, and database exports must not be committed.
+Only generic schema, application code, and synthetic regression fixtures belong in Git.
+
+## Product identity rollout
+
+Migration `0011_prevent_duplicate_products.sql` adds a nullable, unique product identity key.
+Legacy rows remain null so an upgraded database can apply the migration even when historical
+duplicates still need consolidation. The Worker compares Unicode-normalized name, colour, and
+size against both keyed and legacy rows; every new or edited product receives a key. This blocks
+new duplicates immediately without deleting or automatically merging historical records.

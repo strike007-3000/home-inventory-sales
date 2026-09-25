@@ -5,6 +5,7 @@ coverage/
 
 # Local tooling
 .agents/
+skills-lock.json
 .vite/
 
 .wrangler/

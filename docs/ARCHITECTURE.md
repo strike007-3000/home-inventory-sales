@@ -30,8 +30,9 @@ Cloudflare D1 (binding: DB)
 
 - `products` holds the catalogue, authoritative individual QTY, and optional integer `units_per_set` packaging metadata.
 - `locations` normalizes location labels but production location rows are not stored in Git.
-- `sales` and `sale_items` snapshot commercial details.
+- `sales` and `sale_items` snapshot commercial details and explicit `is_gift` flag (defaulting to 0 / false).
 - `sale_payments` is append-only and supports unpaid, partial, and later payments.
+- `sale_payment_corrections` audits individual payment method edits (`old_payment_method`, `new_payment_method`, `corrected_at`).
 - `stock_movements` explains every stock mutation, including individual-QTY and Stock/set deltas.
 - `sale_cancellations` records reversals instead of deleting history.
 - `lid_references` is isolated from inventory tables and exposes a lookup view that falls back to MRP when SP is zero.
@@ -41,6 +42,10 @@ Cloudflare D1 (binding: DB)
 - Money crosses API boundaries as integer paise.
 - QTY is a non-negative integer; Stock/set count may be fractional.
 - Catalogue CP, SRP, and MRP are prices per set. For configured products, line totals use integer arithmetic and round half up once per line: `set price × individual QTY ÷ pieces per set`.
+- Gift sales deduct stock transactionally, store ₹0 payable, ₹0 received, no balance, create no payment rows, and are excluded from revenue and unpaid calculations.
+- Existing ₹0 completed sales with no payment rows can be explicitly marked as Gift via `PUT /api/sales/:id`; automatic ₹0-to-Gift inference is strictly forbidden.
+- Individual payment methods can be edited independently via `PUT /api/sales/:saleId/payments/:paymentId`; each correction is recorded in `sale_payment_corrections` without altering payment amounts, timestamps, or other payments in mixed-payment sales.
+- Native browser printing (`window.print()`) is used for Sale Details without backend PDF generation dependencies. Dedicated `@media print` CSS formats clean ordinary and gift sale layouts for A4/PDF output.
 - A configured sale decrements authoritative QTY and derives Stock/set after the sale. Sale items snapshot pieces per set, set price, and the authoritative line total so later product edits cannot rewrite history.
 - Products without Pieces in one set retain the legacy seller-confirmed Stock/set sale flow and are excluded from individual-QTY Dashboard valuations.
 - Mutations require authentication, approved origin, and CSRF token.

@@ -74,6 +74,7 @@ export interface SaleDTO {
   readonly soldAt: string;
   readonly saleDate: string;
   readonly customerName: string | null;
+  readonly isGift: boolean;
   readonly lines: readonly SaleLineDTO[];
   readonly subtotalPaise: number;
   readonly discountPaise: number;
@@ -119,6 +120,7 @@ export interface CreateSaleRequest {
   readonly idempotencyKey: string;
   readonly saleDate: string;
   readonly customerName?: string | null;
+  readonly isGift?: boolean;
   readonly lines: readonly {
     readonly productId: number;
     readonly quantity: number;
@@ -138,11 +140,16 @@ export interface PaymentDTO {
   readonly receivedAt: string;
 }
 
+export interface UpdatePaymentMethodRequest {
+  readonly paymentMethod: string;
+}
+
 export interface SaleSummaryDTO {
   readonly id: number;
   readonly saleNumber: string;
   readonly saleDate: string;
   readonly customerName: string | null;
+  readonly isGift: boolean;
   readonly totalPaise: number;
   readonly paidPaise: number;
   readonly balancePaise: number;
@@ -225,6 +232,7 @@ export interface CancelSaleRequest {
 export interface UpdateSaleRequest {
   readonly customerName?: string | null;
   readonly saleDate?: string;
+  readonly isGift?: boolean;
 }
 
 export interface ImportCommitRequest {

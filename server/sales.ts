@@ -1,4 +1,4 @@
-import type { CancelSaleRequest, CreateSaleRequest, PaymentDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, UpdateSaleRequest } from '../shared/contracts';
+import type { CancelSaleRequest, CreateSaleRequest, PaymentDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, UpdatePaymentMethodRequest, UpdateSaleRequest } from '../shared/contracts';
 import { errorResponse, jsonResponse, requireJsonBody } from './validation';
 
 type ProductRow = {
@@ -17,6 +17,7 @@ type SaleRow = {
   sold_at: string;
   sale_date: string;
   customer_name: string | null;
+  is_gift: number;
   subtotal_minor: number;
   discount_minor: number;
   total_minor: number;
@@ -53,7 +54,7 @@ export async function handleListSales(url: URL, env: Env): Promise<Response> {
   const limit = Number.isSafeInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 500) : 250;
   const pattern = `%${query.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
   const rows = await env.DB.prepare(
-    `SELECT s.id, s.sale_number, s.sale_date, s.customer_name, s.total_minor, s.status,
+    `SELECT s.id, s.sale_number, s.sale_date, s.customer_name, s.is_gift, s.total_minor, s.status,
             COALESCE(SUM(p.amount_minor), 0) AS paid_minor
      FROM sales s
      LEFT JOIN sale_payments p ON p.sale_id = s.id
@@ -64,19 +65,21 @@ export async function handleListSales(url: URL, env: Env): Promise<Response> {
      LIMIT ?`,
   ).bind(query, pattern, pattern, limit).all<{
     id: number; sale_number: string; sale_date: string; customer_name: string | null;
-    total_minor: number; status: 'completed' | 'cancelled'; paid_minor: number;
+    is_gift: number; total_minor: number; status: 'completed' | 'cancelled'; paid_minor: number;
   }>();
   const items: SaleSummaryDTO[] = rows.results.map((row) => {
-    const balancePaise = Math.max(0, row.total_minor - row.paid_minor);
+    const isGift = Boolean(row.is_gift);
+    const balancePaise = isGift ? 0 : Math.max(0, row.total_minor - row.paid_minor);
     return {
       id: row.id,
       saleNumber: row.sale_number,
       saleDate: row.sale_date,
       customerName: row.customer_name,
+      isGift,
       totalPaise: row.total_minor,
-      paidPaise: row.paid_minor,
+      paidPaise: isGift ? 0 : row.paid_minor,
       balancePaise,
-      paymentStatus: row.paid_minor === 0 ? 'unpaid' : balancePaise === 0 ? 'paid' : 'partial',
+      paymentStatus: isGift ? 'paid' : row.paid_minor === 0 ? 'unpaid' : balancePaise === 0 ? 'paid' : 'partial',
       status: row.status,
     };
   });
@@ -93,7 +96,7 @@ function isNonNegativeFinite(value: unknown): value is number {
 
 async function readSale(id: number, env: Env): Promise<SaleDTO | null> {
   const sale = await env.DB.prepare(
-    `SELECT id, sale_number, sold_at, sale_date, customer_name, subtotal_minor, discount_minor, total_minor,
+    `SELECT id, sale_number, sold_at, sale_date, customer_name, is_gift, subtotal_minor, discount_minor, total_minor,
             payment_method, status, cancelled_at, cancellation_reason
      FROM sales WHERE id = ?`,
   ).bind(id).first<SaleRow>();
@@ -115,8 +118,9 @@ async function readSale(id: number, env: Env): Promise<SaleDTO | null> {
     paymentMethod: payment.payment_method,
     receivedAt: payment.received_at,
   }));
-  const paidPaise = payments.reduce((sum, payment) => sum + payment.amountPaise, 0);
-  const balancePaise = Math.max(0, sale.total_minor - paidPaise);
+  const isGift = Boolean(sale.is_gift);
+  const paidPaise = isGift ? 0 : payments.reduce((sum, payment) => sum + payment.amountPaise, 0);
+  const balancePaise = isGift ? 0 : Math.max(0, sale.total_minor - paidPaise);
 
   return {
     id: sale.id,
@@ -124,6 +128,7 @@ async function readSale(id: number, env: Env): Promise<SaleDTO | null> {
     soldAt: sale.sold_at,
     saleDate: sale.sale_date,
     customerName: sale.customer_name,
+    isGift,
     lines: items.results.map((item) => ({
       productId: item.product_id,
       productName: item.product_name_snapshot,
@@ -141,7 +146,7 @@ async function readSale(id: number, env: Env): Promise<SaleDTO | null> {
     paymentMethod: sale.payment_method,
     paidPaise,
     balancePaise,
-    paymentStatus: paidPaise === 0 ? 'unpaid' : balancePaise === 0 ? 'paid' : 'partial',
+    paymentStatus: isGift ? 'paid' : paidPaise === 0 ? 'unpaid' : balancePaise === 0 ? 'paid' : 'partial',
     payments,
     status: sale.status,
     ...(sale.cancelled_at ? { cancelledAt: sale.cancelled_at } : {}),
@@ -158,14 +163,20 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
   if (!Array.isArray(body.lines) || body.lines.length === 0 || body.lines.length > 100) {
     return errorResponse('Sale must contain between 1 and 100 lines', 400, 'lines');
   }
-  if (!isNonNegativeMoney(body.discountPaise)) {
-    return errorResponse('Discount must be a non-negative safe integer', 400, 'discountPaise');
+  if (body.isGift !== undefined && typeof body.isGift !== 'boolean') {
+    return errorResponse('isGift must be a boolean', 400, 'isGift');
   }
-  if (!PAYMENT_METHODS.has(body.paymentMethod)) {
-    return errorResponse('Invalid payment method', 400, 'paymentMethod');
-  }
-  if (!isNonNegativeMoney(body.receivedPaise)) {
-    return errorResponse('Amount received must be a non-negative safe integer', 400, 'receivedPaise');
+  const isGift = Boolean(body.isGift);
+  if (!isGift) {
+    if (!isNonNegativeMoney(body.discountPaise)) {
+      return errorResponse('Discount must be a non-negative safe integer', 400, 'discountPaise');
+    }
+    if (!PAYMENT_METHODS.has(body.paymentMethod)) {
+      return errorResponse('Invalid payment method', 400, 'paymentMethod');
+    }
+    if (!isNonNegativeMoney(body.receivedPaise)) {
+      return errorResponse('Amount received must be a non-negative safe integer', 400, 'receivedPaise');
+    }
   }
   if (typeof body.saleDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.saleDate)) {
     return errorResponse('Sale date must be a valid date', 400, 'saleDate');
@@ -223,25 +234,34 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     let setPrice: number | null = null;
     let setStockAfter: number;
     if (product.units_per_set) {
-      if (!isNonNegativeMoney(line.setPricePaise)) {
+      let setP = line.setPricePaise;
+      if (setP === undefined && isNonNegativeMoney(line.unitPricePaise)) {
+        setP = line.unitPricePaise * product.units_per_set;
+      }
+      if (setP === undefined && isGift) {
+        setP = 0;
+      }
+      if (!isNonNegativeMoney(setP)) {
         return errorResponse('Set price is required for configured products', 400, 'setPricePaise');
       }
-      const numerator = BigInt(line.setPricePaise) * BigInt(line.quantity);
+      const numerator = BigInt(setP) * BigInt(line.quantity);
       const denominator = BigInt(product.units_per_set);
       const rounded = numerator / denominator + ((numerator % denominator) * 2n >= denominator ? 1n : 0n);
       if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) {
         return errorResponse('Sale total exceeds the safe integer range', 400, 'setPricePaise');
       }
       lineTotal = Number(rounded);
-      unitPrice = Math.floor((line.setPricePaise + Math.floor(product.units_per_set / 2)) / product.units_per_set);
-      setPrice = line.setPricePaise;
-      setStockAfter = (product.stock_quantity - line.quantity) / product.units_per_set;
+      unitPrice = Math.floor((setP + Math.floor(product.units_per_set / 2)) / product.units_per_set);
+      setPrice = setP;
+      const nextSetStock = product.set_stock_quantity - line.quantity / product.units_per_set;
+      setStockAfter = nextSetStock <= 1e-9 ? 0 : Number(nextSetStock.toFixed(12));
     } else {
-      if (!isNonNegativeMoney(line.unitPricePaise) || !isNonNegativeFinite(line.setStockAfter)) {
+      const unitP = isGift ? (line.unitPricePaise ?? 0) : line.unitPricePaise;
+      if (!isNonNegativeMoney(unitP) || !isNonNegativeFinite(line.setStockAfter)) {
         return errorResponse('Unit price and resulting Stock/set are required until pieces per set is configured', 400, 'lines');
       }
-      lineTotal = line.unitPricePaise * line.quantity;
-      unitPrice = line.unitPricePaise;
+      lineTotal = unitP * line.quantity;
+      unitPrice = unitP;
       setStockAfter = line.setStockAfter;
     }
     if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) {
@@ -250,9 +270,13 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     computedLines.set(line.productId, { lineTotal, unitPrice, setPrice, setStockAfter });
     subtotal += lineTotal;
   }
-  if (body.discountPaise > subtotal) return errorResponse('Discount cannot exceed subtotal', 400, 'discountPaise');
-  const total = subtotal - body.discountPaise;
-  if (body.receivedPaise > total) return errorResponse('Amount received cannot exceed sale total', 400, 'receivedPaise');
+
+  const effectiveDiscount = isGift ? subtotal : body.discountPaise;
+  if (effectiveDiscount > subtotal) return errorResponse('Discount cannot exceed subtotal', 400, 'discountPaise');
+  const total = isGift ? 0 : subtotal - effectiveDiscount;
+  const effectiveReceived = isGift ? 0 : body.receivedPaise;
+  if (effectiveReceived > total) return errorResponse('Amount received cannot exceed sale total', 400, 'receivedPaise');
+  const paymentMethod = isGift ? 'other' : body.paymentMethod;
 
   const now = new Date().toISOString();
   const saleNumber = `SALE-${now.slice(0, 10).replaceAll('-', '')}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
@@ -266,15 +290,15 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
   });
   const batch: D1PreparedStatement[] = [
     env.DB.prepare(
-      `INSERT INTO sales (sale_number, sold_at, sale_date, customer_name, subtotal_minor, discount_minor, total_minor, status, payment_method, idempotency_key)
-       SELECT ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ? WHERE ${guards}`,
-    ).bind(saleNumber, now, body.saleDate, customerName, subtotal, body.discountPaise, subtotal - body.discountPaise, body.paymentMethod, key, ...guardValues),
+      `INSERT INTO sales (sale_number, sold_at, sale_date, customer_name, is_gift, subtotal_minor, discount_minor, total_minor, status, payment_method, idempotency_key)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${guards}`,
+    ).bind(saleNumber, now, body.saleDate, customerName, isGift ? 1 : 0, subtotal, effectiveDiscount, total, 'completed', paymentMethod, key, ...guardValues),
   ];
-  if (body.receivedPaise > 0) {
+  if (!isGift && effectiveReceived > 0) {
     batch.push(env.DB.prepare(
       `INSERT INTO sale_payments (sale_id, amount_minor, payment_method, received_at)
        SELECT id, ?, ?, ? FROM sales WHERE idempotency_key = ?`,
-    ).bind(body.receivedPaise, body.paymentMethod, now, key));
+    ).bind(effectiveReceived, paymentMethod, now, key));
   }
 
   for (const line of body.lines) {
@@ -355,28 +379,44 @@ export async function handleCancelSale(id: number, request: Request, env: Env): 
   const sale = await env.DB.prepare('SELECT id, status FROM sales WHERE id = ?').bind(id).first<{ id: number; status: string }>();
   if (!sale) return errorResponse('Sale not found', 404);
   if (sale.status === 'cancelled') return errorResponse('Sale is already cancelled', 409);
+  // Consolidation can leave multiple historical price/packaging lines for one product.
+  // Restore each product once, expressing historical set deltas in its current units.
   const itemRows = await env.DB.prepare(
-    `SELECT si.product_id, si.quantity, si.set_stock_before, si.set_stock_after,
+    `SELECT si.product_id, SUM(si.quantity) AS quantity,
+            SUM((si.set_stock_before - si.set_stock_after) *
+              CASE WHEN si.units_per_set_snapshot IS NOT NULL AND p.units_per_set IS NOT NULL
+                THEN 1.0 * si.units_per_set_snapshot / p.units_per_set ELSE 1 END) AS set_delta,
             p.set_stock_quantity, p.version
-     FROM sale_items si JOIN products p ON p.id = si.product_id WHERE si.sale_id = ? ORDER BY si.id`,
-  ).bind(id).all<{ product_id: number; quantity: number; set_stock_before: number; set_stock_after: number; set_stock_quantity: number; version: number }>();
+     FROM sale_items si JOIN products p ON p.id = si.product_id
+     WHERE si.sale_id = ? GROUP BY si.product_id ORDER BY si.product_id`,
+  ).bind(id).all<{ product_id: number; quantity: number; set_delta: number; set_stock_quantity: number; version: number }>();
   for (const item of itemRows.results) {
-    if (item.set_stock_quantity + item.set_stock_before - item.set_stock_after < 0) {
+    if (item.set_stock_quantity + item.set_delta < 0) {
       return errorResponse('Set stock changed after this sale and cannot be safely reversed; correct stock first', 409);
     }
   }
+  // One JSON binding keeps the guard below D1's parameter limit even for large sales.
+  const expectedVersions = JSON.stringify(itemRows.results.map((item) => [item.product_id, item.version]));
   const now = new Date().toISOString();
   const batch: D1PreparedStatement[] = [
     env.DB.prepare(
       `INSERT INTO sale_cancellations (sale_id, reason, cancelled_at)
-       SELECT id, ?, ? FROM sales WHERE id = ? AND status = 'completed'`,
-    ).bind(reason, now, id),
+       SELECT id, CASE WHEN NOT EXISTS (
+         SELECT 1 FROM json_each(?) expected
+         WHERE NOT EXISTS (
+           SELECT 1 FROM products p
+           WHERE p.id = json_extract(expected.value, '$[0]')
+             AND p.version = json_extract(expected.value, '$[1]')
+         )
+       ) THEN ? ELSE NULL END, ?
+       FROM sales WHERE id = ? AND status = 'completed'`,
+    ).bind(expectedVersions, reason, now, id),
   ];
   for (const item of itemRows.results) {
-    const setDelta = item.set_stock_before - item.set_stock_after;
+    const setDelta = item.set_delta;
     batch.push(env.DB.prepare(
       `UPDATE products SET stock_quantity = stock_quantity + ?, set_stock_quantity = set_stock_quantity + ?, updated_at = ?, version = version + 1
-       WHERE id = ? AND version = ? AND EXISTS (SELECT 1 FROM sale_cancellations WHERE sale_id = ?)`,
+       WHERE id = ? AND version = ? AND EXISTS (SELECT 1 FROM sale_cancellations c JOIN sales s ON s.id = c.sale_id WHERE c.sale_id = ? AND s.status = 'completed')`,
     ).bind(item.quantity, setDelta, now, item.product_id, item.version, id));
     batch.push(env.DB.prepare(
       `INSERT INTO stock_movements (product_id, quantity_delta, set_stock_delta, reason, sale_id, note, created_at)
@@ -385,7 +425,7 @@ export async function handleCancelSale(id: number, request: Request, env: Env): 
   }
   batch.push(env.DB.prepare(
     `UPDATE sales SET status = 'cancelled', cancelled_at = ?, cancellation_reason = ?
-     WHERE id = ? AND EXISTS (SELECT 1 FROM sale_cancellations WHERE sale_id = ?)`,
+     WHERE id = ? AND EXISTS (SELECT 1 FROM sale_cancellations c JOIN sales s ON s.id = c.sale_id WHERE c.sale_id = ? AND s.status = 'completed')`,
   ).bind(now, reason, id, id));
   try {
     const results = await env.DB.batch(batch);
@@ -400,7 +440,7 @@ export async function handleUpdateSale(id: number, request: Request, env: Env): 
   const body = await requireJsonBody<UpdateSaleRequest>(request);
   if (body instanceof Response) return body;
 
-  const existingSale = await env.DB.prepare('SELECT id, sale_date, customer_name FROM sales WHERE id = ?').bind(id).first<SaleRow>();
+  const existingSale = await env.DB.prepare('SELECT id, sale_date, customer_name, is_gift, status, total_minor FROM sales WHERE id = ?').bind(id).first<SaleRow>();
   if (!existingSale) return errorResponse('Sale not found', 404);
 
   let newSaleDate = existingSale.sale_date;
@@ -427,8 +467,69 @@ export async function handleUpdateSale(id: number, request: Request, env: Env): 
     newCustomerName = customerName;
   }
 
-  await env.DB.prepare('UPDATE sales SET sale_date = ?, customer_name = ? WHERE id = ?')
-    .bind(newSaleDate, newCustomerName, id).run();
+  let newIsGift = existingSale.is_gift;
+  if (body.isGift !== undefined) {
+    if (typeof body.isGift !== 'boolean') {
+      return errorResponse('isGift must be a boolean', 400, 'isGift');
+    }
+    if (body.isGift) {
+      if (existingSale.status !== 'completed') {
+        return errorResponse('Only completed sales can be marked as gift', 409);
+      }
+      if (existingSale.is_gift === 1) {
+        return errorResponse('Sale is already marked as gift', 409);
+      }
+      if (existingSale.total_minor !== 0) {
+        return errorResponse('Only ₹0 sales can be marked as gift', 409);
+      }
+      const paymentCount = await env.DB.prepare('SELECT COUNT(*) AS count FROM sale_payments WHERE sale_id = ?').bind(id).first<{ count: number }>();
+      if ((paymentCount?.count ?? 0) > 0) {
+        return errorResponse('Sales with recorded payments cannot be marked as gift', 409);
+      }
+      newIsGift = 1;
+    }
+  }
+
+  await env.DB.prepare('UPDATE sales SET sale_date = ?, customer_name = ?, is_gift = ? WHERE id = ?')
+    .bind(newSaleDate, newCustomerName, newIsGift, id).run();
 
   return jsonResponse(await readSale(id, env));
+}
+
+export async function handleUpdatePaymentMethod(saleId: number, paymentId: number, request: Request, env: Env): Promise<Response> {
+  const body = await requireJsonBody<UpdatePaymentMethodRequest>(request);
+  if (body instanceof Response) return body;
+
+  if (!PAYMENT_METHODS.has(body.paymentMethod)) {
+    return errorResponse('Invalid payment method', 400, 'paymentMethod');
+  }
+
+  const payment = await env.DB.prepare('SELECT id, sale_id, payment_method FROM sale_payments WHERE id = ?').bind(paymentId).first<{ id: number; sale_id: number; payment_method: string }>();
+  if (!payment || payment.sale_id !== saleId) {
+    return errorResponse('Payment record not found for this sale', 404);
+  }
+
+  if (payment.payment_method === body.paymentMethod) {
+    const sale = await readSale(saleId, env);
+    return jsonResponse(sale);
+  }
+
+  const now = new Date().toISOString();
+
+  const result = await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE sale_payments SET payment_method = ? WHERE id = ? AND sale_id = ? AND payment_method = ?',
+    ).bind(body.paymentMethod, paymentId, saleId, payment.payment_method),
+    env.DB.prepare(
+      `INSERT INTO sale_payment_corrections (payment_id, sale_id, old_payment_method, new_payment_method, corrected_at)
+       SELECT ?, ?, ?, ?, ? WHERE changes() = 1`,
+    ).bind(paymentId, saleId, payment.payment_method, body.paymentMethod, now),
+  ]);
+
+  if ((result[0]?.meta.changes ?? 0) === 0) {
+    return errorResponse('Payment method was updated concurrently by another request', 409);
+  }
+
+  const updatedSale = await readSale(saleId, env);
+  return jsonResponse(updatedSale);
 }

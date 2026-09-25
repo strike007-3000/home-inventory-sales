@@ -16,11 +16,14 @@ import {
   setSaleLineSetStock,
   setSaleDiscount,
   setSalePaymentMethod,
+  setSaleIsGift,
   clearSaleDraft,
   getRestockLineQuantity,
   setRestockLineQuantity,
   calculateSaleSubtotal,
   calculateProportionalLineTotal,
+  calculateSetStockAfterSale,
+  getProductSetupIssue,
   searchProducts,
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABELS,
@@ -52,6 +55,7 @@ import {
   ChevronLeftIcon,
   LogoutIcon,
   AppLogo,
+  PrintIcon,
 } from './icons';
 import './styles.css';
 import { DashboardScreen } from './screens/dashboard';
@@ -151,6 +155,7 @@ interface ProductCardProps {
   maxQuantity?: number;
   onQuantityChange: (quantity: number) => void;
   showAfterQuantity?: number;
+  onNeedsSetup?: (productId: ProductId) => void;
 }
 
 function ProductCard({
@@ -160,6 +165,7 @@ function ProductCard({
   maxQuantity,
   onQuantityChange,
   showAfterQuantity,
+  onNeedsSetup,
 }: ProductCardProps) {
   const isOutOfStock = product.quantity === 0;
   const isSaleQuantity = maxQuantity !== undefined;
@@ -183,6 +189,7 @@ function ProductCard({
   const piecePrice = unitsPerSet ? calculateProportionalLineTotal(product.pricePaise, 1, unitsPerSet) : null;
   const fullSets = unitsPerSet ? Math.floor(quantityInDraft / unitsPerSet) : 0;
   const loosePieces = unitsPerSet ? quantityInDraft % unitsPerSet : quantityInDraft;
+  const setupIssue = isSaleQuantity ? getProductSetupIssue(product) : null;
 
   const quantityControl = (label: string, value: number, step: number, looseOnly = false) => {
     const decreaseTo = looseOnly
@@ -232,10 +239,17 @@ function ProductCard({
           <span class="status-chip status-chip-out-of-stock">Out of stock</span>
         ) : (
           unitsPerSet
-            ? `${product.quantity} pieces · ${product.quantity / unitsPerSet} sets`
+            ? `${product.quantity} pieces · ${product.setStockQuantity ?? 0} sets`
             : `${product.quantity} in stock`
         )}
       </div>
+
+      {setupIssue && (
+        <div class="error-message mb-3" role="alert">
+          Stock needs setup. You can still record this sale. {setupIssue}
+          {onNeedsSetup && <button class="btn btn-secondary btn-sm mt-2" type="button" onClick={() => onNeedsSetup(product.id)}>Fix in Needs setup</button>}
+        </div>
+      )}
 
       {unitsPerSet ? (
         <div class="sale-quantity-options">
@@ -273,21 +287,33 @@ function ProductCard({
 // Sales History Screen
 // ============================================================================
 
-type SalesStatusFilter = 'all' | 'unpaid' | 'partial' | 'paid' | 'cancelled';
+type SalesStatusFilter = 'all' | 'gift' | 'unpaid' | 'partial' | 'paid' | 'cancelled';
+type SalesViewState = {
+  query: string;
+  appliedQuery: string;
+  statusFilter: SalesStatusFilter;
+};
+
+const EMPTY_SALES_VIEW_STATE: SalesViewState = {
+  query: '',
+  appliedQuery: '',
+  statusFilter: 'all',
+};
 
 interface SalesHistoryScreenProps {
   state: InventoryState;
   onStateChange: InventoryStateSetter;
   onNavigate: (route: Route) => void;
   setLastCompletedSaleId: (id: number) => void;
+  viewState: SalesViewState;
+  onViewStateChange: (state: SalesViewState) => void;
 }
 
-function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompletedSaleId }: SalesHistoryScreenProps) {
+function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompletedSaleId, viewState, onViewStateChange }: SalesHistoryScreenProps) {
   const [sales, setSales] = useState<readonly SaleSummaryDTO[]>([]);
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<SalesStatusFilter>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { query, appliedQuery, statusFilter } = viewState;
 
   const loadSales = useCallback(async (search = '') => {
     setIsLoading(true);
@@ -302,10 +328,18 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
     }
   }, []);
 
-  useEffect(() => { void loadSales(); }, [loadSales]);
+  useEffect(() => { void loadSales(appliedQuery); }, [loadSales, appliedQuery]);
 
-  const visibleSales = sales.filter((sale) => statusFilter === 'all'
-    || (statusFilter === 'cancelled' ? sale.status === 'cancelled' : sale.status === 'completed' && sale.paymentStatus === statusFilter));
+  const visibleSales = sales.filter((sale) => {
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'cancelled') return sale.status === 'cancelled';
+    if (sale.status !== 'completed') return false;
+    if (statusFilter === 'gift') return sale.isGift;
+    if (statusFilter === 'unpaid') return !sale.isGift && sale.paymentStatus === 'unpaid';
+    if (statusFilter === 'partial') return !sale.isGift && sale.paymentStatus === 'partial';
+    if (statusFilter === 'paid') return !sale.isGift && sale.paymentStatus === 'paid';
+    return true;
+  });
 
   const openSale = async (id: number) => {
     setError(null);
@@ -331,16 +365,23 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
           </div>
         </div>
 
-        <form class="sales-search-form" onSubmit={(event) => { event.preventDefault(); void loadSales(query); }}>
+        <form class="sales-search-form" onSubmit={(event) => {
+          event.preventDefault();
+          if (query === appliedQuery) void loadSales(query);
+          else onViewStateChange({ ...viewState, appliedQuery: query });
+        }}>
           <div class="search-input">
             <SearchIcon />
             <input type="search" class="form-input" value={query}
               placeholder="Search customer or sale number..." aria-label="Search sales"
-              onInput={(event) => setQuery((event.target as HTMLInputElement).value)} />
+              onInput={(event) => onViewStateChange({ ...viewState, query: (event.target as HTMLInputElement).value })} />
           </div>
           <div class="sales-search-actions">
             <button class="btn btn-navy" type="submit">Search</button>
-            <button class="btn btn-secondary" type="button" onClick={() => { setQuery(''); void loadSales(); }}>Reset</button>
+            <button class="btn btn-secondary" type="button" onClick={() => {
+              if (appliedQuery === '') void loadSales();
+              onViewStateChange({ ...viewState, query: '', appliedQuery: '' });
+            }}>Reset</button>
           </div>
         </form>
 
@@ -348,6 +389,7 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
           {(
             [
               { value: 'all', label: 'All sales' },
+              { value: 'gift', label: 'Gifts' },
               { value: 'paid', label: 'Paid' },
               { value: 'unpaid', label: 'Unpaid' },
               { value: 'partial', label: 'Partial' },
@@ -359,7 +401,7 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
               type="button"
               class={`filter-pill ${statusFilter === item.value ? 'selected' : ''}`}
               aria-pressed={statusFilter === item.value}
-              onClick={() => setStatusFilter(item.value)}
+              onClick={() => onViewStateChange({ ...viewState, statusFilter: item.value })}
             >
               {item.label}
             </button>
@@ -375,10 +417,12 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
               <button key={sale.id} class="card card-clickable w-full text-left" type="button" onClick={() => void openSale(sale.id)}>
                 <div class="flex justify-between items-start">
                   <div>
-                    <div class="font-semibold">{sale.customerName || 'Walk-in customer'}</div>
+                    <div class="font-semibold">{sale.customerName || (sale.isGift ? 'Gift recipient' : 'Walk-in customer')}</div>
                     <div class="text-sm mt-1">
                       {sale.status === 'cancelled' ? (
                         <span class="status-chip status-chip-out-of-stock">Cancelled</span>
+                      ) : sale.isGift ? (
+                        <span class="status-chip status-chip-purple">Gift</span>
                       ) : sale.paymentStatus === 'paid' ? (
                         <span class="status-chip status-chip-success">Paid</span>
                       ) : sale.paymentStatus === 'partial' ? (
@@ -386,14 +430,14 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
                       ) : (
                         <span class="status-chip status-chip-warning">Unpaid</span>
                       )}
-                      {sale.balancePaise > 0 && sale.status !== 'cancelled' && (
+                      {!sale.isGift && sale.balancePaise > 0 && sale.status !== 'cancelled' && (
                         <span class="text-ink-light ml-2">({formatInr(sale.balancePaise)} due)</span>
                       )}
                     </div>
                     <div class="text-sm text-ink-light mt-1">{sale.saleNumber} · {new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</div>
                   </div>
 
-                  <div class="font-semibold">{formatInr(sale.totalPaise)}</div>
+                  <div class="font-semibold">{sale.isGift ? 'Gift' : formatInr(sale.totalPaise)}</div>
                 </div>
               </button>
             ))}
@@ -412,9 +456,10 @@ interface SellScreenProps {
   state: InventoryState;
   onSaleDraftChange: (draft: InventoryState['saleDraft']) => void;
   onNavigate: (route: Route) => void;
+  onNeedsSetup: (productId: ProductId) => void;
 }
 
-function SellScreen({ state, onSaleDraftChange, onNavigate }: SellScreenProps) {
+function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup }: SellScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
@@ -497,6 +542,7 @@ function SellScreen({ state, onSaleDraftChange, onNavigate }: SellScreenProps) {
               quantityLabel="Quantity to sell"
               maxQuantity={product.quantity}
               onQuantityChange={(q) => handleQuantityChange(product.id, q)}
+              onNeedsSetup={onNeedsSetup}
             />
           ))
         )}
@@ -573,6 +619,12 @@ function ReviewSaleScreen({
   const subtotalPaise = subtotalResult.ok ? subtotalResult.value : 0;
   const totalPaise = Math.max(0, subtotalPaise - saleDraft.discountPaise);
   const effectiveReceivedPaise = receivedPaise ?? totalPaise;
+  const setupWarnings = saleDraft.lines.flatMap((line) => {
+    const product = products.get(line.productId);
+    if (!product) return [];
+    const issue = getProductSetupIssue(product);
+    return issue ? [`${product.name}: ${issue}`] : [];
+  });
 
   // Get line items with product details
   const lineItems = saleDraft.lines
@@ -584,17 +636,24 @@ function ReviewSaleScreen({
         ? calculateProportionalLineTotal(pricePaise, line.quantity, product.unitsPerSet)
         : { ok: true as const, value: pricePaise * line.quantity };
       if (!proportional.ok) return null;
+      const setStockResult = calculateSetStockAfterSale(product, line.quantity);
+      if (!setStockResult.ok) return null;
       return {
         product,
         quantity: line.quantity,
         pricePaise,
         setStockAfter: product.unitsPerSet
-          ? (product.quantity - line.quantity) / product.unitsPerSet
+          ? setStockResult.value
           : line.setStockAfter ?? product.setStockQuantity ?? 0,
         lineTotal: proportional.value,
       };
     })
     .filter((item): item is { product: Product; quantity: number; pricePaise: number; setStockAfter: number; lineTotal: number } => item !== null);
+  const blockingError = !subtotalResult.ok
+    ? subtotalResult.error
+    : lineItems.length !== saleDraft.lines.length
+      ? 'One or more sale items are no longer available.'
+      : null;
 
   const handleDiscountChange = (e: Event) => {
     const value = (e.target as HTMLInputElement).value;
@@ -614,6 +673,10 @@ function ReviewSaleScreen({
   };
 
   const handleCompleteSale = async () => {
+    if (blockingError) {
+      setError(blockingError);
+      return;
+    }
     setError(null);
     setIsSubmitting(true);
 
@@ -622,12 +685,13 @@ function ReviewSaleScreen({
         idempotencyKey: saleIdempotencyKey,
         saleDate,
         customerName: customerName.trim() || null,
+        isGift: saleDraft.isGift,
         lines: lineItems.map(({ product, quantity, pricePaise, setStockAfter }) => product.unitsPerSet
           ? { productId: product.id, quantity, setPricePaise: pricePaise }
           : { productId: product.id, quantity, unitPricePaise: pricePaise, setStockAfter }),
-        discountPaise: saleDraft.discountPaise,
-        paymentMethod: saleDraft.paymentMethod,
-        receivedPaise: effectiveReceivedPaise,
+        discountPaise: saleDraft.isGift ? 0 : saleDraft.discountPaise,
+        paymentMethod: saleDraft.isGift ? 'other' : saleDraft.paymentMethod,
+        receivedPaise: saleDraft.isGift ? 0 : effectiveReceivedPaise,
       };
       const sale = await apiPostJson<SaleDTO>('/sales', request);
       const record = { ...sale, paymentMethod: sale.paymentMethod as PaymentMethod };
@@ -686,16 +750,47 @@ function ReviewSaleScreen({
 
         <h1 class="text-2xl font-semibold mb-4">Review sale</h1>
 
+        {blockingError && (
+          <div class="error-message mb-4" role="alert">
+            Cannot complete sale: {blockingError} Go back and update the items.
+          </div>
+        )}
+
+        {setupWarnings.length > 0 && (
+          <div class="error-message mb-4" role="alert">
+            <div>Stock needs setup, but you can complete this sale and fix it later in Products.</div>
+            {setupWarnings.map((message) => <div key={message} class="mt-1">{message}</div>)}
+          </div>
+        )}
+
         <div class="card">
           <div class="form-group">
-            <label class="form-label" for="customer-name">Customer name (optional)</label>
+            <label class="flex items-center gap-2 cursor-pointer font-semibold mb-3">
+              <input
+                type="checkbox"
+                checked={saleDraft.isGift}
+                onChange={(e) => onSaleDraftChange(setSaleIsGift(saleDraft, (e.target as HTMLInputElement).checked))}
+              />
+              Mark as Gift sale
+            </label>
+            {saleDraft.isGift && (
+              <div class="text-sm text-ink-light mb-3">
+                Stock will be reduced. No payment will be due.
+              </div>
+            )}
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="customer-name">
+              {saleDraft.isGift ? 'Recipient name (optional)' : 'Customer name (optional)'}
+            </label>
             <input
               id="customer-name"
               type="text"
               class="form-input"
               value={customerName}
               maxLength={200}
-              placeholder="Enter customer name"
+              placeholder={saleDraft.isGift ? 'Enter recipient name' : 'Enter customer name'}
               onInput={(event) => setCustomerName((event.target as HTMLInputElement).value)}
             />
           </div>
@@ -728,7 +823,7 @@ function ReviewSaleScreen({
                       : `Qty: ${quantity}`}
                   </div>
                 </div>
-                <div class="font-semibold">{formatInr(lineTotal)}</div>
+                <div class="font-semibold">{saleDraft.isGift ? 'Gift' : formatInr(lineTotal)}</div>
               </div>
               <div class="form-group mt-3">
                 <label class="form-label" for={`price-${product.id}`}>
@@ -767,64 +862,68 @@ function ReviewSaleScreen({
             <span class="font-semibold">{formatInr(subtotalPaise)}</span>
           </div>
 
-          <div class="form-group">
-            <label class="form-label" for="discount">Discount amount (₹)</label>
-            <input
-              id="discount"
-              type="number"
-              class="form-input"
-              value={saleDraft.discountPaise / 100}
-              onInput={handleDiscountChange}
-              min={0}
-              step={1}
-              inputMode="decimal"
-            />
-          </div>
+          {!saleDraft.isGift && (
+            <div class="form-group">
+              <label class="form-label" for="discount">Discount amount (₹)</label>
+              <input
+                id="discount"
+                type="number"
+                class="form-input"
+                value={saleDraft.discountPaise / 100}
+                onInput={handleDiscountChange}
+                min={0}
+                step={1}
+                inputMode="decimal"
+              />
+            </div>
+          )}
 
           <div class="flex justify-between text-lg font-semibold mt-3 pt-3 divider-top">
             <span>Total</span>
-            <span>{formatInr(totalPaise)}</span>
+            <span>{saleDraft.isGift ? 'Gift (₹0)' : formatInr(totalPaise)}</span>
           </div>
         </div>
 
         {/* Payment method */}
-        <div class="card">
-          <div class="form-group">
-            <label class="form-label" for="amount-received">Amount received now (₹)</label>
-            <input
-              id="amount-received"
-              type="number"
-              class="form-input"
-              min={0}
-              max={totalPaise / 100}
-              step="0.01"
-              inputMode="decimal"
-              value={effectiveReceivedPaise / 100}
-              onInput={(event) => setReceivedPaise(Math.max(0, Math.round((parseFloat((event.target as HTMLInputElement).value) || 0) * 100)))}
-            />
-            <div class="text-sm text-ink-light mt-2">
-              {effectiveReceivedPaise === 0
-                ? 'Marked unpaid — payment can be added later.'
-                : effectiveReceivedPaise < totalPaise
-                  ? `${formatInr(totalPaise - effectiveReceivedPaise)} will remain due.`
-                  : 'Fully paid.'}
+        {!saleDraft.isGift && (
+          <div class="card">
+            <div class="form-group">
+              <label class="form-label" for="amount-received">Amount received now (₹)</label>
+              <input
+                id="amount-received"
+                type="number"
+                class="form-input"
+                min={0}
+                max={totalPaise / 100}
+                step="0.01"
+                inputMode="decimal"
+                value={effectiveReceivedPaise / 100}
+                onInput={(event) => setReceivedPaise(Math.max(0, Math.round((parseFloat((event.target as HTMLInputElement).value) || 0) * 100)))}
+              />
+              <div class="text-sm text-ink-light mt-2">
+                {effectiveReceivedPaise === 0
+                  ? 'Marked unpaid — payment can be added later.'
+                  : effectiveReceivedPaise < totalPaise
+                    ? `${formatInr(totalPaise - effectiveReceivedPaise)} will remain due.`
+                    : 'Fully paid.'}
+              </div>
+            </div>
+            <label class="form-label">Payment method</label>
+            <div class="payment-methods" role="group" aria-label="Payment method">
+              {PAYMENT_METHODS.map((method) => (
+                <button
+                  key={method}
+                  class={`payment-pill ${saleDraft.paymentMethod === method ? 'selected' : ''}`}
+                  onClick={() => handlePaymentMethodChange(method)}
+                  aria-pressed={saleDraft.paymentMethod === method}
+                  type="button"
+                >
+                  {PAYMENT_METHOD_LABELS[method]}
+                </button>
+              ))}
             </div>
           </div>
-          <label class="form-label">Payment method</label>
-          <div class="payment-methods" role="group" aria-label="Payment method">
-            {PAYMENT_METHODS.map((method) => (
-              <button
-                key={method}
-                class={`payment-pill ${saleDraft.paymentMethod === method ? 'selected' : ''}`}
-                onClick={() => handlePaymentMethodChange(method)}
-                aria-pressed={saleDraft.paymentMethod === method}
-                type="button"
-              >
-                {PAYMENT_METHOD_LABELS[method]}
-              </button>
-            ))}
-          </div>
-        </div>
+        )}
 
         {error && (
           <div class="error-message mt-3" role="alert">
@@ -839,10 +938,10 @@ function ReviewSaleScreen({
           <button
             class="btn btn-primary btn-lg"
             onClick={handleCompleteSale}
-            disabled={isSubmitting || lineItems.length === 0}
+            disabled={isSubmitting || lineItems.length === 0 || blockingError !== null}
             type="button"
           >
-            {isSubmitting ? 'Saving...' : `Complete sale · ${formatInr(totalPaise)}`}
+            {isSubmitting ? 'Saving...' : (saleDraft.isGift ? 'Complete gift · ₹0' : `Complete sale · ${formatInr(totalPaise)}`)}
           </button>
         </div>
       </div>
@@ -891,9 +990,11 @@ function SaleCompletedScreen({ state, lastCompletedSaleId, onNavigate }: SaleCom
           <p class="result-message">
             {itemCount} {itemCount === 1 ? 'item' : 'items'} sold<br />
             {sale.customerName ? `${sale.customerName} · ` : ''}{new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}<br />
-            {sale.paymentStatus === 'paid'
-              ? `${formatInr(sale.paidPaise ?? sale.totalPaise)} received`
-              : `${formatInr(sale.paidPaise ?? 0)} received · ${formatInr(sale.balancePaise ?? sale.totalPaise)} due`}<br />
+            {sale.isGift
+              ? 'Gift — no payment due'
+              : sale.paymentStatus === 'paid'
+                ? `${formatInr(sale.paidPaise ?? sale.totalPaise)} received`
+                : `${formatInr(sale.paidPaise ?? 0)} received · ${formatInr(sale.balancePaise ?? sale.totalPaise)} due`}<br />
             Stock has been updated
           </p>
           <div class="result-actions">
@@ -1482,9 +1583,10 @@ interface ViewSaleScreenProps {
   lastCompletedSaleId: number;
   onStateChange: InventoryStateSetter;
   onNavigate: (route: Route) => void;
+  backRoute: 'home' | 'sales';
 }
 
-function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate }: ViewSaleScreenProps) {
+function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate, backRoute }: ViewSaleScreenProps) {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('upi');
   const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -1494,6 +1596,12 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
   const [editSaleDate, setEditSaleDate] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editingPaymentId, setEditingPaymentId] = useState<number | null>(null);
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState<PaymentMethod>('upi');
+  const [paymentCorrectionError, setPaymentCorrectionError] = useState<string | null>(null);
+  const [isSavingPaymentCorrection, setIsSavingPaymentCorrection] = useState(false);
+  const [isMarkingGift, setIsMarkingGift] = useState(false);
+  const [giftMarkError, setGiftMarkError] = useState<string | null>(null);
 
   const sale = state.sales.find((s) => s.id === lastCompletedSaleId);
 
@@ -1512,7 +1620,9 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
     );
   }
 
-  const balancePaise = sale.balancePaise ?? 0;
+  const balancePaise = sale.isGift ? 0 : sale.balancePaise ?? 0;
+  const isEligibleForMarkAsGift = sale.status === 'completed' && !sale.isGift && sale.totalPaise === 0 && (!sale.payments || sale.payments.length === 0);
+
   const handleAddPayment = async () => {
     const amountPaise = Math.round((parseFloat(paymentAmount) || 0) * 100);
     setPaymentError(null);
@@ -1578,95 +1688,257 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
     }
   };
 
+  const handleMarkAsGift = async () => {
+    setGiftMarkError(null);
+    setIsMarkingGift(true);
+    try {
+      const updated = await apiPutJson<SaleDTO>(`/sales/${sale.id}`, { isGift: true });
+      const record = {
+        ...updated,
+        paymentMethod: updated.paymentMethod as PaymentMethod,
+        payments: updated.payments.map((payment) => ({ ...payment, paymentMethod: payment.paymentMethod as PaymentMethod })),
+      };
+      onStateChange((previous) => ({
+        ...previous,
+        sales: previous.sales.map((item) => item.id === sale.id ? record : item),
+      }));
+    } catch (error) {
+      setGiftMarkError(error instanceof Error ? error.message : 'Failed to mark sale as gift');
+    } finally {
+      setIsMarkingGift(false);
+    }
+  };
+
+  const handleSavePaymentMethodCorrection = async (paymentId: number) => {
+    setPaymentCorrectionError(null);
+    setIsSavingPaymentCorrection(true);
+    try {
+      const updated = await apiPutJson<SaleDTO>(`/sales/${sale.id}/payments/${paymentId}`, { paymentMethod: editingPaymentMethod });
+      const record = {
+        ...updated,
+        paymentMethod: updated.paymentMethod as PaymentMethod,
+        payments: updated.payments.map((payment) => ({ ...payment, paymentMethod: payment.paymentMethod as PaymentMethod })),
+      };
+      onStateChange((previous) => ({
+        ...previous,
+        sales: previous.sales.map((item) => item.id === sale.id ? record : item),
+      }));
+      setEditingPaymentId(null);
+    } catch (error) {
+      setPaymentCorrectionError(error instanceof Error ? error.message : 'Payment method could not be updated');
+    } finally {
+      setIsSavingPaymentCorrection(false);
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
     <div class="screen">
       <div class="main no-sticky-action">
-        <button class="btn btn-ghost btn-sm mb-4" onClick={() => onNavigate('home')} type="button">
-          <ChevronLeftIcon /> Back
-        </button>
-
-        <div class="sale-detail-header mb-2">
-          <h1 class="text-2xl font-semibold">Sale #{sale.saleNumber}</h1>
-          {!isEditingDetails && (
-            <button class="btn btn-primary sale-edit-button" onClick={startEditDetails} type="button">
-              Edit sale details
-            </button>
-          )}
+        <div class="flex justify-between items-center mb-4 non-printable">
+          <button class="btn btn-ghost btn-sm" onClick={() => onNavigate(backRoute)} type="button">
+            <ChevronLeftIcon /> {backRoute === 'sales' ? 'Back to sales' : 'Back'}
+          </button>
+          <button class="btn btn-secondary btn-sm" onClick={handlePrint} type="button">
+            <PrintIcon /> Print / Save PDF
+          </button>
         </div>
 
-        {isEditingDetails ? (
-          <div class="card mb-4">
-            <h2 class="text-lg font-semibold mb-3">Edit sale details</h2>
-            <div class="form-group">
-              <label class="form-label" for="edit-customer-name">Customer name (optional)</label>
-              <input
-                id="edit-customer-name"
-                type="text"
-                class="form-input"
-                value={editCustomerName}
-                maxLength={200}
-                placeholder="Enter customer name"
-                onInput={(event) => setEditCustomerName((event.target as HTMLInputElement).value)}
-              />
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="edit-sale-date">Sale date</label>
-              <input
-                id="edit-sale-date"
-                type="date"
-                class="form-input"
-                value={editSaleDate}
-                onInput={(event) => setEditSaleDate((event.target as HTMLInputElement).value)}
-                required
-              />
-            </div>
-            {editError && <div class="error-message mb-3" role="alert">{editError}</div>}
-            <div class="flex gap-2">
-              <button class="btn btn-primary btn-sm flex-1" type="button" disabled={isSavingEdit} onClick={handleSaveDetails}>
-                {isSavingEdit ? 'Saving...' : 'Save'}
-              </button>
-              <button class="btn btn-secondary btn-sm flex-1" type="button" disabled={isSavingEdit} onClick={() => setIsEditingDetails(false)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p class="text-sm text-ink-light mb-4">
-            {sale.customerName && <>{sale.customerName}<br /></>}
-            Sale date: {new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}<br />
-            Recorded: {new Date(sale.soldAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
-          </p>
-        )}
-
-        {sale.lines.map((line) => (
-          <div key={`${line.productId}-${line.quantity}`} class="card">
-            <div class="flex justify-between">
-              <div>
-                <div class="font-semibold">{line.productName}</div>
-                <div class="text-sm text-ink-light">Qty: {line.quantity}</div>
+        {/* Printable / Display region */}
+        <div class="printable-region">
+          <div class="sale-detail-header mb-2">
+            <div>
+              <h1 class="text-2xl font-semibold">Sale receipt</h1>
+              <div class="text-sm text-ink-light">Receipt no. {sale.saleNumber}</div>
+              <div class="mt-1">
+                {sale.status === 'cancelled' ? (
+                  <span class="status-chip status-chip-out-of-stock">Cancelled</span>
+                ) : sale.isGift ? (
+                  <span class="status-chip status-chip-purple">Gift</span>
+                ) : sale.paymentStatus === 'paid' ? (
+                  <span class="status-chip status-chip-success">Paid in full</span>
+                ) : sale.paymentStatus === 'partial' ? (
+                  <span class="status-chip status-chip-warning">Partially paid</span>
+                ) : (
+                  <span class="status-chip status-chip-warning">Unpaid</span>
+                )}
               </div>
-              <div class="font-semibold">{formatInr(line.lineTotalPaise)}</div>
             </div>
+            {!isEditingDetails && (
+              <div class="non-printable flex flex-col gap-2">
+                <button class="btn btn-primary sale-edit-button" onClick={startEditDetails} type="button">
+                  Edit sale details
+                </button>
+                {isEligibleForMarkAsGift && (
+                  <button class="btn btn-secondary sale-edit-button" onClick={() => void handleMarkAsGift()} disabled={isMarkingGift} type="button">
+                    {isMarkingGift ? 'Updating...' : 'Mark as gift'}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-        ))}
 
-        <div class="card mt-4">
-          <div class="flex justify-between mb-2">
-            <span>Total</span>
-            <span class="font-semibold">{formatInr(sale.totalPaise)}</span>
+          {giftMarkError && <div class="error-message mb-3 non-printable" role="alert">{giftMarkError}</div>}
+
+          {isEditingDetails ? (
+            <div class="card mb-4 non-printable">
+              <h2 class="text-lg font-semibold mb-3">Edit sale details</h2>
+              <div class="form-group">
+                <label class="form-label" for="edit-customer-name">
+                  {sale.isGift ? 'Recipient name (optional)' : 'Customer name (optional)'}
+                </label>
+                <input
+                  id="edit-customer-name"
+                  type="text"
+                  class="form-input"
+                  value={editCustomerName}
+                  maxLength={200}
+                  placeholder={sale.isGift ? 'Enter recipient name' : 'Enter customer name'}
+                  onInput={(event) => setEditCustomerName((event.target as HTMLInputElement).value)}
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="edit-sale-date">Sale date</label>
+                <input
+                  id="edit-sale-date"
+                  type="date"
+                  class="form-input"
+                  value={editSaleDate}
+                  onInput={(event) => setEditSaleDate((event.target as HTMLInputElement).value)}
+                  required
+                />
+              </div>
+              {editError && <div class="error-message mb-3" role="alert">{editError}</div>}
+              <div class="flex gap-2">
+                <button class="btn btn-primary btn-sm flex-1" type="button" disabled={isSavingEdit} onClick={handleSaveDetails}>
+                  {isSavingEdit ? 'Saving...' : 'Save'}
+                </button>
+                <button class="btn btn-secondary btn-sm flex-1" type="button" disabled={isSavingEdit} onClick={() => setIsEditingDetails(false)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p class="text-sm text-ink-light mb-4">
+              {sale.customerName && <>{sale.isGift ? 'Recipient' : 'Customer'}: {sale.customerName}<br /></>}
+              Sale date: {new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
+              <span class="non-printable"><br />Recorded: {new Date(sale.soldAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+            </p>
+          )}
+
+          {/* Items section */}
+          <div class="card mb-4 receipt-items-card">
+            <h2 class="text-md font-semibold mb-3">{sale.isGift ? 'Gifted items' : 'Items'}</h2>
+            <div class={`receipt-item-head ${sale.isGift ? 'receipt-item-head-gift' : ''}`} aria-hidden="true">
+              <span>Item</span>
+              <span class="receipt-number-cell">Qty</span>
+              {!sale.isGift && <span class="receipt-number-cell">Amount</span>}
+            </div>
+            {sale.lines.map((line, lineIndex) => (
+              <div key={`${line.productId}-${lineIndex}`} class={`receipt-item-row ${sale.isGift ? 'receipt-item-row-gift' : ''}`}>
+                <div class="font-semibold receipt-item-name">{line.productName}</div>
+                <div class="text-sm text-ink-light receipt-item-qty"><span class="receipt-mobile-label">Qty: </span>{line.quantity}</div>
+                {!sale.isGift && <div class="font-semibold receipt-number-cell receipt-line-total">{formatInr(line.lineTotalPaise)}</div>}
+              </div>
+            ))}
           </div>
-          <div class="flex justify-between mb-2">
-            <span>Received</span>
-            <span>{formatInr(sale.paidPaise ?? sale.totalPaise)}</span>
-          </div>
-          <div class="flex justify-between font-semibold">
-            <span>Balance due</span>
-            <span>{formatInr(balancePaise)}</span>
-          </div>
+
+          {/* Totals & Payments section */}
+          {sale.isGift ? (
+            <div class="card mb-4">
+              <div class="font-semibold text-purple-700">Gift — no payment due</div>
+            </div>
+          ) : (
+            <div class="card mb-4 receipt-totals-card">
+              <div class="flex justify-between mb-2">
+                <span>Subtotal</span>
+                <span>{formatInr(sale.subtotalPaise)}</span>
+              </div>
+              {sale.discountPaise > 0 && (
+                <div class="flex justify-between mb-2 text-ink-light">
+                  <span>Discount</span>
+                  <span>- {formatInr(sale.discountPaise)}</span>
+                </div>
+              )}
+              <div class={`flex justify-between font-semibold border-t border-line pt-2 ${sale.paymentStatus === 'paid' ? '' : 'mb-3'}`}>
+                <span>{sale.paymentStatus === 'paid' ? 'Total paid' : 'Total'}</span>
+                <span>{formatInr(sale.totalPaise)}</span>
+              </div>
+              {sale.paymentStatus !== 'paid' && <>
+                <div class="flex justify-between mb-2 text-ink-light">
+                  <span>Amount received</span>
+                  <span>{formatInr(sale.paidPaise ?? 0)}</span>
+                </div>
+                <div class="flex justify-between font-semibold border-t border-line pt-2">
+                  <span>Balance due</span>
+                  <span>{formatInr(balancePaise)}</span>
+                </div>
+              </>}
+            </div>
+          )}
+
+          {/* Recorded Payments list with per-payment edit */}
+          {!sale.isGift && sale.payments && sale.payments.length > 0 && (
+            <div class="card mb-4">
+              <h2 class="text-md font-semibold mb-3">{sale.payments.length === 1 ? 'Payment' : 'Payments'}</h2>
+              {paymentCorrectionError && <div class="error-message mb-3 non-printable" role="alert">{paymentCorrectionError}</div>}
+              {sale.payments.map((p) => (
+                <div key={p.id} class="py-2 border-b border-line last:border-b-0">
+                  {editingPaymentId === p.id ? (
+                    <div class="non-printable">
+                      <div class="text-sm font-semibold mb-2">Edit payment method for {formatInr(p.amountPaise)}</div>
+                      <div class="payment-methods mb-3" role="group" aria-label="Edit payment method">
+                        {PAYMENT_METHODS.map((m) => (
+                          <button key={m} type="button" class={`payment-pill ${editingPaymentMethod === m ? 'selected' : ''}`}
+                            onClick={() => setEditingPaymentMethod(m)}>
+                            {PAYMENT_METHOD_LABELS[m]}
+                          </button>
+                        ))}
+                      </div>
+                      <div class="flex gap-2">
+                        <button class="btn btn-primary btn-sm flex-1" disabled={isSavingPaymentCorrection} onClick={() => void handleSavePaymentMethodCorrection(p.id)} type="button">
+                          {isSavingPaymentCorrection ? 'Saving...' : 'Save method'}
+                        </button>
+                        <button class="btn btn-secondary btn-sm flex-1" disabled={isSavingPaymentCorrection} onClick={() => setEditingPaymentId(null)} type="button">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div class="flex justify-between items-center">
+                      <div>
+                        <div class="font-semibold">{formatInr(p.amountPaise)} · {PAYMENT_METHOD_LABELS[p.paymentMethod as PaymentMethod] || p.paymentMethod}</div>
+                        <div class="text-xs text-ink-light">{new Date(p.receivedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+                      </div>
+                      {sale.status === 'completed' && (
+                        <button class="btn btn-ghost btn-sm non-printable" onClick={() => { setEditingPaymentId(p.id); setEditingPaymentMethod(p.paymentMethod as PaymentMethod); setPaymentCorrectionError(null); }} type="button">
+                          Edit method
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {sale.status === 'cancelled' && (
+            <div class="card mb-4 alert-danger">
+              <div class="font-semibold">Cancelled</div>
+              {sale.cancellationReason && <div class="text-sm">Reason: {sale.cancellationReason}</div>}
+              {sale.cancelledAt && <div class="text-xs text-ink-light mt-1">Cancelled at: {new Date(sale.cancelledAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>}
+            </div>
+          )}
+
+          {sale.status !== 'cancelled' && <div class="receipt-thanks">Thank you</div>}
         </div>
 
-        {sale.status === 'completed' && balancePaise > 0 && (
-          <div class="card mt-4">
+        {/* Add Payment section for unpaid/partial sales */}
+        {!sale.isGift && sale.status === 'completed' && balancePaise > 0 && (
+          <div class="card mt-4 non-printable">
             <h2 class="text-lg font-semibold mb-3">Add payment</h2>
             <div class="form-group">
               <label class="form-label" for="later-payment">Amount received (₹)</label>
@@ -1693,19 +1965,12 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate 
 
         {sale.status === 'completed' && (
           <button
-            class="btn btn-danger btn-lg mt-6"
+            class="btn btn-danger btn-lg mt-6 non-printable"
             onClick={() => onNavigate('cancel-sale-confirm')}
             type="button"
           >
             Cancel this sale
           </button>
-        )}
-
-        {sale.status === 'cancelled' && (
-          <div class="text-center text-ink-light mt-4">
-            <p>This sale was cancelled.</p>
-            {sale.cancellationReason && <p>Reason: {sale.cancellationReason}</p>}
-          </div>
         )}
       </div>
     </div>
@@ -1777,8 +2042,8 @@ function CancelSaleConfirmScreen({
         <div class="card mb-4">
           <p class="mb-3">This will put {sale.lines.reduce((sum, l) => sum + l.quantity, 0)} {sale.lines.reduce((sum, l) => sum + l.quantity, 0) === 1 ? 'item' : 'items'} back into stock:</p>
           <ul class="mb-3">
-            {sale.lines.map((line) => (
-              <li key={`${line.productId}-${line.quantity}`} class="mb-1">
+            {sale.lines.map((line, lineIndex) => (
+              <li key={`${line.productId}-${lineIndex}`} class="mb-1">
                 {line.productName}: +{line.quantity}
               </li>
             ))}
@@ -1828,7 +2093,10 @@ export function App() {
   const [state, setState] = useState<InventoryState>(createEmptyInventoryState);
   const [route, setRoute] = useState<Route>('home');
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [openProductsInSetup, setOpenProductsInSetup] = useState(false);
   const [lastCompletedSaleId, setLastCompletedSaleId] = useState<number>(0);
+  const [saleDetailsBackRoute, setSaleDetailsBackRoute] = useState<'home' | 'sales'>('home');
+  const [salesViewState, setSalesViewState] = useState<SalesViewState>(EMPTY_SALES_VIEW_STATE);
   const [activeSaleIdempotencyKey, setActiveSaleIdempotencyKey] = useState<string>(() => crypto.randomUUID());
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -1839,6 +2107,12 @@ export function App() {
       ...previous,
       products: new Map(items.map((product) => [product.id, product])),
     }));
+  }, []);
+
+  const openNeedsSetup = useCallback((productId: ProductId) => {
+    setSelectedProductId(productId);
+    setOpenProductsInSetup(true);
+    setRoute('products');
   }, []);
 
   // Auth gate: check session on mount
@@ -1865,15 +2139,26 @@ export function App() {
     return () => window.removeEventListener('api:signed-out', handler);
   }, []);
 
+  useEffect(() => {
+    if (signedIn !== false) return;
+    setSalesViewState(EMPTY_SALES_VIEW_STATE);
+    setSaleDetailsBackRoute('home');
+  }, [signedIn]);
+
   const handleNavigate = useCallback((newRoute: Route | 'products', productId?: number) => {
+    if (newRoute === 'view-sale' && route !== 'view-sale' && route !== 'cancel-sale-confirm') {
+      setSaleDetailsBackRoute(route === 'sales' ? 'sales' : 'home');
+    }
     setRoute(newRoute as Route);
     if (newRoute === 'products' && productId !== undefined) {
       setSelectedProductId(productId);
+      setOpenProductsInSetup(false);
     } else {
       setSelectedProductId(null);
+      setOpenProductsInSetup(false);
       window.scrollTo(0, 0);
     }
-  }, []);
+  }, [route]);
 
   const handleLogout = useCallback(async () => {
     setIsLoggingOut(true);
@@ -1910,9 +2195,9 @@ export function App() {
       case 'home':
         return <DashboardScreen state={state} onNavigate={handleNavigate} />;
       case 'sell':
-        return <SellScreen state={state} onSaleDraftChange={handleSaleDraftChange} onNavigate={handleNavigate} />;
+        return <SellScreen state={state} onSaleDraftChange={handleSaleDraftChange} onNavigate={handleNavigate} onNeedsSetup={openNeedsSetup} />;
       case 'sales':
-        return <SalesHistoryScreen state={state} onStateChange={setState} onNavigate={handleNavigate} setLastCompletedSaleId={setLastCompletedSaleId} />;
+        return <SalesHistoryScreen state={state} onStateChange={setState} onNavigate={handleNavigate} setLastCompletedSaleId={setLastCompletedSaleId} viewState={salesViewState} onViewStateChange={setSalesViewState} />;
       case 'review-sale':
         return (
           <ReviewSaleScreen
@@ -1935,11 +2220,11 @@ export function App() {
       case 'fix-stock':
         return <FixStockScreen state={state} onStateChange={setState} />;
       case 'view-sale':
-        return <ViewSaleScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
+        return <ViewSaleScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} backRoute={saleDetailsBackRoute} />;
       case 'cancel-sale-confirm':
         return <CancelSaleConfirmScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
       case 'products':
-        return <ProductList selectedProductId={selectedProductId} onNavigate={handleNavigate} onProductsChanged={refreshProducts} />;
+        return <ProductList initialActiveFilter={openProductsInSetup ? 'setup' : 'active'} selectedProductId={selectedProductId} onNavigate={handleNavigate} onProductsChanged={refreshProducts} />;
       case 'lids':
         return <LidLookup />;
       default:

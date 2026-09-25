@@ -8,6 +8,7 @@ import {
   requireJsonBody,
 } from './validation';
 import type { LocationDTO, ProductDTO, CreateProductRequest, UpdateProductRequest } from '../shared/contracts';
+import { productIdentityKey } from './product-identity';
 
 const PRODUCT_SELECT = `
   SELECT products.*,
@@ -44,12 +45,21 @@ function isSkuConstraintError(error: unknown): boolean {
     message.includes('idx_products_sku');
 }
 
+function isProductIdentityConstraintError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : '';
+  return message.includes('idx_products_identity') ||
+    message.includes('UNIQUE constraint failed: products.identity_key');
+}
+
 function productErrorResponse(error: unknown): Response {
   if (error instanceof ProductDomainError) {
     return errorResponse(error.message, error.status);
   }
   if (isSkuConstraintError(error)) {
     return errorResponse('A product with this SKU already exists', 409);
+  }
+  if (isProductIdentityConstraintError(error)) {
+    return errorResponse('A matching product already exists. Edit it or use Change stock.', 409);
   }
   return errorResponse('Internal server error', 500);
 }
@@ -85,6 +95,46 @@ async function validateLocation(env: Env, locationId: number | null): Promise<vo
     .bind(locationId)
     .first();
   if (!location) throw new ProductDomainError('Location not found', 400);
+}
+
+async function findDuplicateProduct(
+  env: Env,
+  name: string,
+  colour: string | null,
+  size: string | null,
+  excludeId?: number,
+): Promise<ProductDTO | null> {
+  const identityKey = productIdentityKey(name, colour, size);
+  const candidates = await env.DB.prepare(
+    `${PRODUCT_SELECT}
+     WHERE (identity_key = ? OR identity_key IS NULL)
+       ${excludeId === undefined ? '' : 'AND id != ?'}`,
+  ).bind(...(excludeId === undefined ? [identityKey] : [identityKey, excludeId]))
+    .all<Record<string, unknown>>();
+  const existing = candidates.results.find(
+    (product) => productIdentityKey(
+      product.name as string,
+      product.colour as string | null,
+      product.size as string | null,
+    ) === identityKey,
+  );
+  return existing ? buildProductDTO(existing) : null;
+}
+
+async function rejectDuplicateProduct(
+  env: Env,
+  name: string,
+  colour: string | null,
+  size: string | null,
+  excludeId?: number,
+): Promise<void> {
+  const existing = await findDuplicateProduct(env, name, colour, size, excludeId);
+  if (existing) {
+    throw new ProductDomainError(
+      `A matching product already exists (ID ${existing.id}: ${existing.name}). Edit it or use Change stock.`,
+      409,
+    );
+  }
 }
 
 // ============================================================================
@@ -235,14 +285,16 @@ async function createProduct(
     }
   }
 
+  await rejectDuplicateProduct(env, name, colour, size);
+
   // Insert product
   const result = await env.DB.prepare(
     `INSERT INTO products (
        sku, name, category, colour, size, selling_price_minor,
        cost_price_minor, stock_quantity, set_stock_quantity, units_per_set, mrp_minor,
-       low_stock_level, location_id, personal_use, active,
+       low_stock_level, location_id, personal_use, active, identity_key,
        created_at, updated_at, version
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
   )
     .bind(
       sku,
@@ -260,6 +312,7 @@ async function createProduct(
       locationId,
       personalUse ? 1 : 0,
       request.active ? 1 : 0,
+      productIdentityKey(name, colour, size),
       now,
       now
     )
@@ -381,12 +434,14 @@ async function updateProduct(
     }
   }
 
+  await rejectDuplicateProduct(env, name, colour, size, id);
+
   // Update product
   const result = await env.DB.prepare(
     `UPDATE products
      SET sku = ?, name = ?, category = ?, colour = ?, size = ?,
          selling_price_minor = ?, cost_price_minor = ?, mrp_minor = ?,
-         units_per_set = ?, low_stock_level = ?, location_id = ?, personal_use = ?, active = ?,
+         units_per_set = ?, low_stock_level = ?, location_id = ?, personal_use = ?, active = ?, identity_key = ?,
          version = version + 1, updated_at = ?
      WHERE id = ? AND version = ?`
   )
@@ -404,6 +459,7 @@ async function updateProduct(
       locationId,
       personalUse ? 1 : 0,
       request.active ? 1 : 0,
+      productIdentityKey(name, colour, size),
       now,
       id,
       expectedVersion
@@ -523,6 +579,19 @@ export async function handleListLocations(env: Env): Promise<Response> {
   } catch {
     return errorResponse('Internal server error', 500);
   }
+}
+
+export async function handleCheckExistingProduct(url: URL, env: Env): Promise<Response> {
+  const name = getQueryParam(url, 'name', '').trim();
+  if (!name) return errorResponse('Product name is required', 400);
+
+  const product = await findDuplicateProduct(
+    env,
+    name,
+    optionalText(getQueryParam(url, 'colour', '')),
+    optionalText(getQueryParam(url, 'size', '')),
+  );
+  return jsonResponse({ exists: product !== null, product });
 }
 
 export async function handleCreateProduct(request: Request, env: Env): Promise<Response> {
