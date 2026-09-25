@@ -174,7 +174,7 @@ export async function verifySession(
     const parts = cookie.split('.');
     if (parts.length !== 3 || !parts[1] || !parts[2]) return false;
 
-    const payload = new TextDecoder('utf-8', { fatal: true }).decode(b64UrlDecode(parts[1]));
+    const payload = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(b64UrlDecode(parts[1]));
     const valid = await hmacVerify(payload, parts[2], hexToBytes(secretHex));
     if (!valid) return false;
 
