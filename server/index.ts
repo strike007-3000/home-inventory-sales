@@ -29,6 +29,7 @@ import { handleStockDelivery, handleStockCount, handleStockAdjustment, handleSto
 import { handleImportPreview, handleImportCommit } from './import';
 import { handleCancelSale, handleCreateSale, handleGetSale, handleListSales, handleRecordPayment, handleUpdatePaymentMethod, handleUpdateSale } from './sales';
 import { handleListLids } from './lids';
+import { handleReports } from './reports';
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
@@ -188,6 +189,11 @@ async function routeApi(
   }
   if (saleMatch && saleMatch[2] === '/payments' && method === 'POST') {
     return handleRecordPayment(saleId!, request, env);
+  }
+
+  // Reports
+  if (path === '/reports' && method === 'GET') {
+    return handleReports(url, env);
   }
 
   // Dashboard
