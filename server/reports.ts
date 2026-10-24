@@ -39,11 +39,15 @@ export async function handleReports(url: URL, env: Env): Promise<Response> {
        GROUP BY sale_date ORDER BY sale_date`,
     ).bind(from, to).all<{ date: string; count: number; total: number }>(),
     env.DB.prepare(
-      `SELECT i.product_id AS id, MAX(i.product_name_snapshot) AS name,
-              SUM(i.quantity) AS units, SUM(ROUND(i.line_total_minor * 1.0 * s.total_minor / COALESCE(NULLIF(s.subtotal_minor, 0), 1))) AS revenue
-       FROM sale_items i JOIN sales s ON s.id = i.sale_id
-       WHERE s.status = 'completed' AND s.sale_date BETWEEN ? AND ?
-       GROUP BY i.product_id ORDER BY revenue DESC, units DESC LIMIT ?`,
+      `SELECT product_id AS id, MAX(name) AS name, SUM(qty) AS units, SUM(net) AS revenue FROM (
+         SELECT i.product_id, i.product_name_snapshot AS name, i.quantity AS qty,
+                -- Running-total allocation: line nets sum exactly to the sale's total_minor.
+                (SUM(i.line_total_minor) OVER w * s.total_minor) / COALESCE(NULLIF(s.subtotal_minor, 0), 1)
+                - ((SUM(i.line_total_minor) OVER w - i.line_total_minor) * s.total_minor) / COALESCE(NULLIF(s.subtotal_minor, 0), 1) AS net
+         FROM sale_items i JOIN sales s ON s.id = i.sale_id
+         WHERE s.status = 'completed' AND s.sale_date BETWEEN ? AND ?
+         WINDOW w AS (PARTITION BY i.sale_id ORDER BY i.id))
+       GROUP BY product_id ORDER BY revenue DESC, units DESC LIMIT ?`,
     ).bind(from, to, TOP_LIMIT).all<{ id: number; name: string; units: number; revenue: number }>(),
     // Revenue above is each line's share of the sale's net total, so discounts and gifts are reflected.
     // In-stock sellable products with no completed sale in the SLOW_DAYS before `to`.

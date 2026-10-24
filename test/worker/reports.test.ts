@@ -96,4 +96,17 @@ describe('Reports API', () => {
     expect(body.topProducts.find((p: any) => p.productId === sold).revenuePaise).toBe(15000);
     expect(body.slowProducts.map((p: any) => p.name)).not.toContain('Created Later');
   });
+
+  it('allocates sale discounts across lines without losing paise', async () => {
+    const ids = [await addProduct('Alloc A'), await addProduct('Alloc B'), await addProduct('Alloc C')];
+    const response = await api('/api/sales', 'POST', {
+      idempotencyKey: 'rep-alloc', saleDate: '2026-05-10',
+      lines: ids.map((productId) => ({ productId, quantity: 1, setPricePaise: 10001 })),
+      discountPaise: 1, paymentMethod: 'cash', receivedPaise: 30002,
+    });
+    expect(response.status).toBe(201);
+    const body = await (await api('/api/reports?from=2026-05-01&to=2026-05-31')).json<any>();
+    const sum = body.topProducts.reduce((s: number, p: any) => s + p.revenuePaise, 0);
+    expect(sum).toBe(body.summary.revenuePaise);
+  });
 });
