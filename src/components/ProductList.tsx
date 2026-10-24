@@ -300,6 +300,8 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
     setChangingStock(null);
   };
 
+  // Per-status counts are only exact when every product was loaded.
+  const allLoaded = total <= products.length;
   const activeCount = products.filter(p => p.active).length;
   const inactiveCount = products.filter(p => !p.active).length;
   const setupCount = products.filter(needsUnitsPerSetConfiguration).length;
@@ -388,9 +390,9 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
         <div class="sales-filter-pills mb-4" role="group" aria-label="Filter products by status">
           {(
             [
-              { value: 'active', label: `Active (${activeCount})` },
-              { value: 'inactive', label: `Inactive (${inactiveCount})` },
-              { value: 'all', label: `All (${products.length})` },
+              { value: 'active', label: allLoaded ? `Active (${activeCount})` : 'Active' },
+              { value: 'inactive', label: allLoaded ? `Inactive (${inactiveCount})` : 'Inactive' },
+              { value: 'all', label: `All (${total})` },
               { value: 'personal', label: 'Personal' },
               { value: 'setup', label: `Needs setup (${setupCount})` },
             ] as const
