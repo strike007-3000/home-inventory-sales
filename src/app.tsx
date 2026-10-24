@@ -2094,6 +2094,13 @@ export function App() {
   const [route, setRoute] = useState<Route>('home');
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [openProductsInSetup, setOpenProductsInSetup] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); };
+  }, []);
   const [lastCompletedSaleId, setLastCompletedSaleId] = useState<number>(0);
   const [saleDetailsBackRoute, setSaleDetailsBackRoute] = useState<'home' | 'sales'>('home');
   const [salesViewState, setSalesViewState] = useState<SalesViewState>(EMPTY_SALES_VIEW_STATE);
@@ -2278,6 +2285,7 @@ export function App() {
           </button>
         </div>
       </div>
+      {!online && <div class="offline-banner" role="status">You're offline. Saving is paused until you reconnect.</div>}
       {renderScreen()}
       {showNav && <Nav currentRoute={route} onNavigate={handleNavigate} onLogout={handleLogout} isLoggingOut={isLoggingOut} />}
     </div>

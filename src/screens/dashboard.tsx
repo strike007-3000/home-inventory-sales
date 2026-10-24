@@ -70,11 +70,11 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
 
   return (
     <div class="screen">
-      <div class="main no-sticky-action">
+      <div class="main home-main">
         <div class="page-header">
           <h1 class="text-2xl font-semibold">Dashboard</h1>
           <div class="header-actions">
-            <button class="btn btn-primary btn-sm" onClick={() => onNavigate('sell')} type="button">Record sale</button>
+            <button class="btn btn-primary btn-sm header-record-sale" onClick={() => onNavigate('sell')} type="button">Record sale</button>
           </div>
         </div>
 
@@ -84,8 +84,10 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
           </div>
         )}
 
+        <div class="home-layout">
+        <div>
         <div class="home-metric-grid mb-4">
-          <div class="card flex items-center justify-between">
+          <div class="card hero-card flex items-center justify-between" style={{ gridColumn: '1 / -1' }}>
             <div class="min-w-0 flex-1 mr-2">
               <div class="summary-value">{todaySales.totalPaise > 0 ? formatInr(todaySales.totalPaise) : '₹0'}</div>
               <div class="summary-label">Today's revenue ({todaySales.count})</div>
@@ -170,6 +172,7 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
           </div>
         )}
 
+        </div>
         <section class="mb-4">
           <h2 class="text-lg font-semibold mb-3">Needs attention</h2>
           {attentionProducts.length > 0 ? (
@@ -193,6 +196,7 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
                     ) : (
                       <span class="status-chip status-chip-low-stock">Low stock</span>
                     )}
+                    <span class="attention-action">Restock</span>
                     <ChevronRightIcon />
                   </div>
                 </button>
@@ -205,6 +209,12 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
             </div>
           )}
         </section>
+        </div>
+      </div>
+      <div class="sticky-action home-sticky-action">
+        <div class="sticky-action-inner">
+          <button class="btn btn-primary btn-lg" onClick={() => onNavigate('sell')} type="button">Record sale</button>
+        </div>
       </div>
     </div>
   );
