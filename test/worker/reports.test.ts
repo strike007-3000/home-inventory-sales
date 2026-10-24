@@ -27,8 +27,8 @@ async function api(path: string, method = 'GET', body?: unknown): Promise<Respon
   }));
 }
 
-async function addProduct(name: string): Promise<number> {
-  const now = new Date().toISOString();
+async function addProduct(name: string, createdAt = '2026-01-01T00:00:00.000Z'): Promise<number> {
+  const now = createdAt;
   const result = await env.DB.prepare(
     `INSERT INTO products (name, selling_price_minor, stock_quantity, set_stock_quantity,
       units_per_set, low_stock_level, active, version, created_at, updated_at)
@@ -74,9 +74,26 @@ describe('Reports API', () => {
     expect(body.summary.revenuePaise).toBe(body.daily.reduce((s: number, d: any) => s + d.totalPaise, 0));
     expect(body.previous.count).toBe(0);
     expect(body.topProducts[0]).toMatchObject({ productId: sold, units: 4 });
+    expect(body.topProducts[0].revenuePaise).toBe(body.summary.revenuePaise);
+    expect(body.outstandingTotal.count).toBe(2);
     expect(body.slowProducts.map((p: any) => p.name)).toContain('Report Idle');
     expect(body.slowProducts.map((p: any) => p.name)).not.toContain('Report Sold');
     expect(body.outstanding).toHaveLength(2);
     for (const row of body.outstanding) expect(row.balancePaise).toBe(row.totalPaise - row.paidPaise);
+  });
+
+  it('reflects discounts in product revenue, skips future-created stock, and keeps totals', async () => {
+    const sold = await addProduct('Discounted Item');
+    await addProduct('Created Later', '2026-12-01T00:00:00.000Z');
+    const response = await api('/api/sales', 'POST', {
+      idempotencyKey: 'rep-disc', saleDate: '2026-04-10',
+      lines: [{ productId: sold, quantity: 2, setPricePaise: 10000 }],
+      discountPaise: 5000, paymentMethod: 'cash', receivedPaise: 15000,
+    });
+    expect(response.status).toBe(201);
+    const body = await (await api('/api/reports?from=2026-04-01&to=2026-04-30')).json<any>();
+    expect(body.summary.revenuePaise).toBe(15000);
+    expect(body.topProducts.find((p: any) => p.productId === sold).revenuePaise).toBe(15000);
+    expect(body.slowProducts.map((p: any) => p.name)).not.toContain('Created Later');
   });
 });

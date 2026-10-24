@@ -2248,6 +2248,15 @@ export function App() {
     setState((prev) => ({ ...prev, restockDraft: draft }));
   }, []);
 
+  // View-sale reads from state.sales, so load the sale before navigating (as Sales history does).
+  const openReportSale = async (id: number) => {
+    const sale = await apiGetJson<SaleDTO>(`/sales/${id}`);
+    const record = { ...sale, paymentMethod: sale.paymentMethod as PaymentMethod };
+    setState((prev) => ({ ...prev, sales: [...prev.sales.filter((item) => item.id !== id), record] }));
+    setLastCompletedSaleId(id);
+    handleNavigate('view-sale');
+  };
+
   // Render current screen
   const renderScreen = () => {
     switch (route) {
@@ -2285,7 +2294,7 @@ export function App() {
       case 'products':
         return <ProductList initialActiveFilter={openProductsInSetup ? 'setup' : 'active'} selectedProductId={selectedProductId} onNavigate={handleNavigate} onProductsChanged={refreshProducts} lidDraft={lidDraft} onLidDraftUsed={() => setLidDraft(null)} />;
       case 'reports':
-        return <ReportsScreen onOpenSale={(id) => { setLastCompletedSaleId(id); handleNavigate('view-sale'); }} />;
+        return <ReportsScreen onOpenSale={openReportSale} />;
       case 'lids':
         return <LidLookup onUseItem={(item) => { setLidDraft(item); handleNavigate('products'); }} />;
       default:

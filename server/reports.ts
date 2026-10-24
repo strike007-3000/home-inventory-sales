@@ -30,7 +30,7 @@ export async function handleReports(url: URL, env: Env): Promise<Response> {
   const prevTo = shiftDate(from, -1);
   const prevFrom = shiftDate(from, -spanDays);
 
-  const [summary, previous, daily, top, slow, outstanding] = await Promise.all([
+  const [summary, previous, daily, top, slow, outstanding, outstandingTotals] = await Promise.all([
     summarise(env, from, to),
     summarise(env, prevFrom, prevTo),
     env.DB.prepare(
@@ -40,23 +40,25 @@ export async function handleReports(url: URL, env: Env): Promise<Response> {
     ).bind(from, to).all<{ date: string; count: number; total: number }>(),
     env.DB.prepare(
       `SELECT i.product_id AS id, MAX(i.product_name_snapshot) AS name,
-              SUM(i.quantity) AS units, SUM(i.line_total_minor) AS revenue
+              SUM(i.quantity) AS units, SUM(ROUND(i.line_total_minor * 1.0 * s.total_minor / COALESCE(NULLIF(s.subtotal_minor, 0), 1))) AS revenue
        FROM sale_items i JOIN sales s ON s.id = i.sale_id
        WHERE s.status = 'completed' AND s.sale_date BETWEEN ? AND ?
        GROUP BY i.product_id ORDER BY revenue DESC, units DESC LIMIT ?`,
     ).bind(from, to, TOP_LIMIT).all<{ id: number; name: string; units: number; revenue: number }>(),
+    // Revenue above is each line's share of the sale's net total, so discounts and gifts are reflected.
     // In-stock sellable products with no completed sale in the SLOW_DAYS before `to`.
     env.DB.prepare(
       `SELECT p.id, p.name, p.stock_quantity AS stock,
               (SELECT MAX(s.sale_date) FROM sale_items i JOIN sales s ON s.id = i.sale_id
-               WHERE i.product_id = p.id AND s.status = 'completed') AS last_sold
+               WHERE i.product_id = p.id AND s.status = 'completed' AND s.sale_date <= ?) AS last_sold
        FROM products p
        WHERE p.active = 1 AND p.personal_use = 0 AND p.stock_quantity > 0
+         AND substr(p.created_at, 1, 10) <= ?
          AND NOT EXISTS (SELECT 1 FROM sale_items i JOIN sales s ON s.id = i.sale_id
                          WHERE i.product_id = p.id AND s.status = 'completed'
                            AND s.sale_date BETWEEN ? AND ?)
        ORDER BY last_sold IS NOT NULL, last_sold, p.name LIMIT 200`,
-    ).bind(shiftDate(to, -(SLOW_DAYS - 1)), to).all<{ id: number; name: string; stock: number; last_sold: string | null }>(),
+    ).bind(to, to, shiftDate(to, -(SLOW_DAYS - 1)), to).all<{ id: number; name: string; stock: number; last_sold: string | null }>(),
     env.DB.prepare(
       `SELECT s.id, s.sale_number, s.sale_date, s.customer_name, s.total_minor,
               COALESCE(SUM(p.amount_minor), 0) AS paid
@@ -65,6 +67,13 @@ export async function handleReports(url: URL, env: Env): Promise<Response> {
        GROUP BY s.id HAVING s.total_minor > paid
        ORDER BY s.sale_date, s.id LIMIT 500`,
     ).all<{ id: number; sale_number: string; sale_date: string; customer_name: string | null; total_minor: number; paid: number }>(),
+    env.DB.prepare(
+      `SELECT COUNT(*) AS count, COALESCE(SUM(total_minor - paid), 0) AS balance FROM (
+         SELECT s.total_minor, COALESCE(SUM(p.amount_minor), 0) AS paid
+         FROM sales s LEFT JOIN sale_payments p ON p.sale_id = s.id
+         WHERE s.status = 'completed' AND s.is_gift = 0
+         GROUP BY s.id HAVING s.total_minor > paid)`,
+    ).first<{ count: number; balance: number }>(),
   ]);
 
   const body: ReportsDTO = {
@@ -76,6 +85,7 @@ export async function handleReports(url: URL, env: Env): Promise<Response> {
     topProducts: top.results.map((r) => ({ productId: r.id, name: r.name, units: r.units, revenuePaise: r.revenue })),
     slowDays: SLOW_DAYS,
     slowProducts: slow.results.map((r) => ({ productId: r.id, name: r.name, stock: r.stock, lastSoldDate: r.last_sold })),
+    outstandingTotal: { count: outstandingTotals?.count ?? 0, balancePaise: outstandingTotals?.balance ?? 0 },
     outstanding: outstanding.results.map((r) => ({
       saleId: r.id,
       saleNumber: r.sale_number,

@@ -59,7 +59,7 @@ function Delta({ current, previous }: { current: number; previous: number }) {
 }
 
 interface ReportsScreenProps {
-  onOpenSale: (saleId: number) => void;
+  onOpenSale: (saleId: number) => Promise<void>;
 }
 
 export function ReportsScreen({ onOpenSale }: ReportsScreenProps) {
@@ -75,6 +75,7 @@ export function ReportsScreen({ onOpenSale }: ReportsScreenProps) {
     if (!from || !to || from > to) return;
     let cancelled = false;
     setError(null);
+    setData(null); // never show or export figures from a previous range
     apiGetJson<ReportsDTO>(`/reports?from=${from}&to=${to}`)
       .then((result) => { if (!cancelled) setData(result); })
       .catch((err: Error) => { if (!cancelled) setError(err.message); });
@@ -114,7 +115,6 @@ export function ReportsScreen({ onOpenSale }: ReportsScreenProps) {
     }
   };
 
-  const outstandingTotal = data?.outstanding.reduce((sum, r) => sum + r.balancePaise, 0) ?? 0;
   const avg = data && data.summary.count > 0 ? Math.round(data.summary.revenuePaise / data.summary.count) : 0;
 
   return (
@@ -207,13 +207,16 @@ export function ReportsScreen({ onOpenSale }: ReportsScreenProps) {
         {data && tab === 'outstanding' && (
           <>
             <div class="report-stats">
-              <div class="card"><div class="summary-value">{formatInr(outstandingTotal)}</div><div class="summary-label">Total outstanding</div></div>
-              <div class="card"><div class="summary-value">{data.outstanding.length}</div><div class="summary-label">Unpaid sales</div></div>
+              <div class="card"><div class="summary-value">{formatInr(data.outstandingTotal.balancePaise)}</div><div class="summary-label">Total outstanding</div></div>
+              <div class="card"><div class="summary-value">{data.outstandingTotal.count}</div><div class="summary-label">Unpaid sales</div></div>
             </div>
+            {data.outstandingTotal.count > data.outstanding.length && (
+              <p class="summary-label">Showing the oldest {data.outstanding.length} of {data.outstandingTotal.count} unpaid sales.</p>
+            )}
             {data.outstanding.length === 0 ? <p class="empty-state">No unpaid balances.</p> : (
               <div class="report-rows">
                 {data.outstanding.map((r) => (
-                  <button type="button" class="report-row report-row-button" key={r.saleId} onClick={() => onOpenSale(r.saleId)}>
+                  <button type="button" class="report-row report-row-button" key={r.saleId} onClick={() => { onOpenSale(r.saleId).catch((err: Error) => setError(err.message)); }}>
                     <div class="report-row-head"><span>{r.customerName || 'No name'}</span><strong>{formatInr(r.balancePaise)}</strong></div>
                     <div class="summary-label">{r.saleNumber} · {r.saleDate} · paid {formatInr(r.paidPaise)} of {formatInr(r.totalPaise)}</div>
                   </button>
