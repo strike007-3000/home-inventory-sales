@@ -238,3 +238,29 @@ export interface UpdateSaleRequest {
 export interface ImportCommitRequest {
   readonly requestId: string;
 }
+
+// ============================================================================
+// Reports
+// ============================================================================
+
+export interface ReportSummaryDTO {
+  readonly count: number;
+  readonly revenuePaise: number;
+  readonly discountPaise: number;
+}
+
+export interface ReportsDTO {
+  readonly from: string;
+  readonly to: string;
+  readonly summary: ReportSummaryDTO;
+  /** Same-length period immediately before `from`. */
+  readonly previous: ReportSummaryDTO;
+  readonly daily: readonly { date: string; count: number; totalPaise: number }[];
+  readonly topProducts: readonly { productId: number; name: string; units: number; revenuePaise: number }[];
+  readonly slowDays: number;
+  readonly slowProducts: readonly { productId: number; name: string; stock: number; lastSoldDate: string | null }[];
+  readonly outstanding: readonly {
+    saleId: number; saleNumber: string; saleDate: string; customerName: string | null;
+    totalPaise: number; paidPaise: number; balancePaise: number;
+  }[];
+}

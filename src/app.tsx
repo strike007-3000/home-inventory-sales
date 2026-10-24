@@ -43,6 +43,7 @@ import {
   HomeIcon,
   SellIcon,
   StockIcon,
+  ReportsIcon,
   ProductsIcon,
   SearchIcon,
   CheckIcon,
@@ -60,6 +61,7 @@ import {
 import './styles.css';
 import { DashboardScreen } from './screens/dashboard';
 import { LoginScreen } from './screens/login';
+import { ReportsScreen } from './screens/reports';
 import { ProductList } from './components/ProductList';
 import { LidLookup } from './components/LidLookup';
 
@@ -77,7 +79,8 @@ type Route =
   | 'view-sale'
   | 'cancel-sale-confirm'
   | 'products'
-  | 'lids';
+  | 'lids'
+  | 'reports';
 
 type InventoryStateSetter = (
   value: InventoryState | ((previous: InventoryState) => InventoryState),
@@ -103,11 +106,12 @@ interface NavProps {
 
 function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
   const navItems: { route: Route; label: string; Icon: () => JSX.Element }[] = [
-    { route: 'home', label: 'Dashboard', Icon: HomeIcon },
+    { route: 'home', label: 'Home', Icon: HomeIcon },
     { route: 'sales', label: 'Sales', Icon: SellIcon },
     { route: 'products', label: 'Products', Icon: ProductsIcon },
     { route: 'lids', label: 'LIDS', Icon: SearchIcon },
     { route: 'stock', label: 'Stock', Icon: StockIcon },
+    { route: 'reports', label: 'Reports', Icon: ReportsIcon },
   ];
   const activeRoute: Route = ['sell', 'review-sale', 'sale-completed', 'view-sale', 'cancel-sale-confirm'].includes(currentRoute)
     ? 'sales'
@@ -2280,6 +2284,8 @@ export function App() {
         return <CancelSaleConfirmScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
       case 'products':
         return <ProductList initialActiveFilter={openProductsInSetup ? 'setup' : 'active'} selectedProductId={selectedProductId} onNavigate={handleNavigate} onProductsChanged={refreshProducts} lidDraft={lidDraft} onLidDraftUsed={() => setLidDraft(null)} />;
+      case 'reports':
+        return <ReportsScreen onOpenSale={(id) => { setLastCompletedSaleId(id); handleNavigate('view-sale'); }} />;
       case 'lids':
         return <LidLookup onUseItem={(item) => { setLidDraft(item); handleNavigate('products'); }} />;
       default:
