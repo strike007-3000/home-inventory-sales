@@ -138,16 +138,31 @@ export function ProductForm({
     if (top) setField('lowStockLevel', top[0]);
   };
 
+  // Copy every descriptive and price field so a new colour or size only needs the changed values.
+  // SKU (unique) and stock quantities are not copied: a new variant has its own.
   const pickProduct = (product: Product) => {
     setSuggestOpen(false);
     setFormData((previous) => ({
       ...previous,
       name: product.name,
-      category: product.category ?? previous.category ?? '',
-      locationId: product.locationId ?? previous.locationId,
+      category: product.category ?? '',
+      colour: product.colour ?? '',
+      size: product.size ?? '',
+      pricePaise: product.pricePaise,
+      mrpPaise: product.mrpPaise ?? null,
+      consultantPricePaise: product.consultantPricePaise ?? null,
+      unitsPerSet: product.unitsPerSet ?? null,
       lowStockLevel: product.lowStockLevel,
-      unitsPerSet: product.unitsPerSet ?? previous.unitsPerSet,
+      locationId: product.locationId ?? null,
+      personalUse: product.personalUse ?? false,
+      active: product.active,
     }));
+    setPriceText({ pricePaise: formatRupeesInput(product.pricePaise), mrpPaise: formatRupeesInput(product.mrpPaise ?? null) });
+    if (product.consultantPricePaise !== null && product.consultantPricePaise !== undefined && product.pricePaise > 0) {
+      const discount = Math.round((1 - product.consultantPricePaise / product.pricePaise) * 10_000) / 100;
+      if (discount >= 0 && discount <= 100) setCpDiscount(String(discount));
+    }
+    lowStockTouched.current = true;
   };
 
   const pickLid = (item: LidReferenceDTO) => {
