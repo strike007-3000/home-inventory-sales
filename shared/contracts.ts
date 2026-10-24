@@ -259,6 +259,8 @@ export interface ReportsDTO {
   readonly topProducts: readonly { productId: number; name: string; units: number; revenuePaise: number }[];
   readonly slowDays: number;
   readonly slowProducts: readonly { productId: number; name: string; stock: number; lastSoldDate: string | null }[];
+  /** Across all unpaid sales; `outstanding` rows are capped, so totals come from here. */
+  readonly outstandingTotal: { count: number; balancePaise: number };
   readonly outstanding: readonly {
     saleId: number; saleNumber: string; saleDate: string; customerName: string | null;
     totalPaise: number; paidPaise: number; balancePaise: number;
