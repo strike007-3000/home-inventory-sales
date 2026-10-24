@@ -1,6 +1,6 @@
-import { useRef, useState } from 'preact/hooks';
-import type { LocationDTO, ProductDTO } from '../../shared/contracts';
-import { formatInr, validateQuantity, validateWholeNumber } from '../domain';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import type { LidReferenceDTO, LocationDTO, ProductDTO } from '../../shared/contracts';
+import { formatInr, validateQuantity, validateWholeNumber, type Product } from '../domain';
 import type { ProductFormData } from '../hooks/useProducts';
 import { ChevronLeftIcon } from '../icons';
 import { apiGetJson } from '../api';
@@ -13,6 +13,7 @@ interface ProductFormProps {
   onCancel: () => void;
   isEditing?: boolean;
   onChangeStock?: () => void;
+  products?: readonly Product[];
 }
 
 export function formatRupeesInput(paise: number | null): string {
@@ -37,6 +38,7 @@ export function ProductForm({
   onCancel,
   isEditing = false,
   onChangeStock,
+  products = [],
 }: ProductFormProps) {
   const [formData, setFormData] = useState<ProductFormData>(() => ({
     name: initialData?.name ?? '',
@@ -89,6 +91,82 @@ export function ProductForm({
     }
   };
 
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [lidMatches, setLidMatches] = useState<LidReferenceDTO[]>([]);
+  const lowStockTouched = useRef(isEditing);
+  const nameQuery = formData.name.trim().toLowerCase();
+
+  const productMatches = useMemo(() => {
+    if (isEditing || nameQuery.length < 2) return [];
+    return products.filter((product) => product.name.toLowerCase().includes(nameQuery)).slice(0, 4);
+  }, [products, nameQuery, isEditing]);
+
+  // Reference-price suggestions from LIDS; debounced, failures just hide the group.
+  useEffect(() => {
+    if (isEditing || nameQuery.length < 2) { setLidMatches([]); return; }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      apiGetJson<{ items: LidReferenceDTO[] }>(`/lids?q=${encodeURIComponent(nameQuery)}&limit=4&offset=0`)
+        .then((data) => { if (!controller.signal.aborted) setLidMatches(data.items); })
+        .catch(() => { if (!controller.signal.aborted) setLidMatches([]); });
+    }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [nameQuery, isEditing]);
+
+  // Existing values from the catalogue, most used first, for datalist suggestions.
+  const valueOptions = (pick: (product: Product) => string | null | undefined) => {
+    const counts = new Map<string, number>();
+    for (const product of products) {
+      const value = pick(product)?.trim();
+      if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([value]) => value);
+  };
+  const colourOptions = useMemo(() => valueOptions((p) => p.colour), [products]);
+  const sizeOptions = useMemo(() => valueOptions((p) => p.size), [products]);
+  const categoryOptions = useMemo(() => valueOptions((p) => p.category), [products]);
+
+  const applyCategory = (category: string) => {
+    setField('category', category);
+    if (lowStockTouched.current) return;
+    const levels = products.filter((p) => p.category === category).map((p) => p.lowStockLevel);
+    if (levels.length === 0) return;
+    const counts = new Map<number, number>();
+    for (const level of levels) counts.set(level, (counts.get(level) ?? 0) + 1);
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (top) setField('lowStockLevel', top[0]);
+  };
+
+  const pickProduct = (product: Product) => {
+    setSuggestOpen(false);
+    setFormData((previous) => ({
+      ...previous,
+      name: product.name,
+      category: product.category ?? previous.category ?? '',
+      locationId: product.locationId ?? previous.locationId,
+      lowStockLevel: product.lowStockLevel,
+      unitsPerSet: product.unitsPerSet ?? previous.unitsPerSet,
+    }));
+  };
+
+  const pickLid = (item: LidReferenceDTO) => {
+    setSuggestOpen(false);
+    setFormData((previous) => ({
+      ...previous,
+      name: item.description,
+      sku: item.itemCode,
+      mrpPaise: item.mrpPaise,
+      pricePaise: item.displayPricePaise,
+      consultantPricePaise: item.consultantPricePaise,
+    }));
+    setPriceText({ pricePaise: formatRupeesInput(item.displayPricePaise), mrpPaise: formatRupeesInput(item.mrpPaise) });
+    const discount = Math.round((1 - item.consultantPricePaise / item.displayPricePaise) * 10_000) / 100;
+    if (Number.isFinite(discount) && discount >= 0 && discount <= 100) setCpDiscount(String(discount));
+    existingCheckRevision.current += 1;
+    setExistingCheck(null);
+  };
+
   const checkExistingProduct = async () => {
     if (!formData.name.trim()) {
       setErrors((previous) => ({ ...previous, name: 'Enter a product name before checking' }));
@@ -117,6 +195,13 @@ export function ProductForm({
       }
     }
   };
+
+  // Re-check for a duplicate automatically while the user types a new product.
+  useEffect(() => {
+    if (isEditing || formData.name.trim().length < 2) return;
+    const timer = setTimeout(() => { void checkExistingProduct(); }, 600);
+    return () => clearTimeout(timer);
+  }, [formData.name, formData.colour, formData.size, isEditing]);
 
   const validateForm = (): boolean => {
     const next: Record<string, string> = {};
@@ -218,7 +303,7 @@ export function ProductForm({
   };
 
   return (
-    <form class="card" onSubmit={handleSubmit}>
+    <form class="card product-form-card" onSubmit={handleSubmit}>
       <button type="button" class="btn btn-ghost btn-sm mb-4" onClick={onCancel} disabled={loading}>
         <ChevronLeftIcon /> Back to products
       </button>
@@ -230,26 +315,72 @@ export function ProductForm({
         <label class="form-label" for="name">
           Product name <span class="required-asterisk">*</span>
         </label>
-        <input
-          id="name"
-          type="text"
-          class={`form-input ${errors.name ? 'form-input-error' : ''}`}
-          value={formData.name}
-          onInput={(event) => setField('name', (event.target as HTMLInputElement).value)}
-          required
-          disabled={loading}
-        />
+        <div class="suggest-wrap">
+          <input
+            id="name"
+            type="text"
+            class={`form-input ${errors.name ? 'form-input-error' : ''}`}
+            value={formData.name}
+            onInput={(event) => { setField('name', (event.target as HTMLInputElement).value); setSuggestOpen(true); setActiveIndex(-1); }}
+            onFocus={() => setSuggestOpen(true)}
+            onBlur={() => setTimeout(() => setSuggestOpen(false), 150)}
+            onKeyDown={(event) => {
+              const total = productMatches.length + lidMatches.length;
+              if (event.key === 'Escape') { setSuggestOpen(false); return; }
+              if (!suggestOpen || total === 0) return;
+              if (event.key === 'ArrowDown') { event.preventDefault(); setActiveIndex((i) => (i + 1) % total); }
+              else if (event.key === 'ArrowUp') { event.preventDefault(); setActiveIndex((i) => (i <= 0 ? total - 1 : i - 1)); }
+              else if (event.key === 'Enter' && activeIndex >= 0) {
+                event.preventDefault();
+                const product = productMatches[activeIndex];
+                if (product) pickProduct(product);
+                else { const item = lidMatches[activeIndex - productMatches.length]; if (item) pickLid(item); }
+                setActiveIndex(-1);
+              }
+            }}
+            autocomplete="off"
+            aria-autocomplete="list"
+            aria-expanded={suggestOpen && (productMatches.length > 0 || lidMatches.length > 0)}
+            aria-controls="name-suggestions"
+            required
+            disabled={loading}
+          />
+          {suggestOpen && (productMatches.length > 0 || lidMatches.length > 0) && (
+            <ul class="suggest-list" id="name-suggestions" role="listbox" aria-label="Name suggestions">
+              {productMatches.length > 0 && <li class="suggest-group" role="presentation">Already in your products</li>}
+              {productMatches.map((product, index) => (
+                <li key={`p${product.id}`} role="presentation">
+                  <button type="button" class={`suggest-item ${activeIndex === index ? 'is-active' : ''}`} role="option" aria-selected={activeIndex === index} onMouseDown={(event) => event.preventDefault()} onClick={() => pickProduct(product)}>
+                    <span>{product.name}<small>{[product.colour, product.size].filter(Boolean).join(' · ') || 'No colour or size'} · QTY {product.quantity}</small></span>
+                    <span class="suggest-price">{formatInr(product.pricePaise)}</span>
+                  </button>
+                </li>
+              ))}
+              {lidMatches.length > 0 && <li class="suggest-group" role="presentation">LIDS price list</li>}
+              {lidMatches.map((item, index) => (
+                <li key={`l${item.id}`} role="presentation">
+                  <button type="button" class={`suggest-item ${activeIndex === productMatches.length + index ? 'is-active' : ''}`} role="option" aria-selected={activeIndex === productMatches.length + index} onMouseDown={(event) => event.preventDefault()} onClick={() => pickLid(item)}>
+                    <span>{item.description}<small>Item code {item.itemCode}</small></span>
+                    <span class="suggest-price">{formatInr(item.displayPricePaise)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         {errors.name && <span class="text-error text-sm mt-1 block">{errors.name}</span>}
       </div>
 
       <div class="grid grid-cols-2 gap-4">
         <div class="form-group">
           <label class="form-label" for="colour">Colour(s)</label>
-          <input id="colour" class="form-input" value={formData.colour} onInput={(event) => setField('colour', (event.target as HTMLInputElement).value)} placeholder="e.g. Pink and green" disabled={loading} />
+          <input id="colour" class="form-input" value={formData.colour} onInput={(event) => setField('colour', (event.target as HTMLInputElement).value)} placeholder="e.g. Pink and green" list="colour-options" disabled={loading} />
+          <datalist id="colour-options">{colourOptions.map((value) => <option key={value} value={value} />)}</datalist>
         </div>
         <div class="form-group">
           <label class="form-label" for="size">Size(s)</label>
-          <input id="size" class="form-input" value={formData.size} onInput={(event) => setField('size', (event.target as HTMLInputElement).value)} placeholder="Leave blank if not applicable" disabled={loading} />
+          <input id="size" class="form-input" value={formData.size} onInput={(event) => setField('size', (event.target as HTMLInputElement).value)} placeholder="Leave blank if not applicable" list="size-options" disabled={loading} />
+          <datalist id="size-options">{sizeOptions.map((value) => <option key={value} value={value} />)}</datalist>
         </div>
       </div>
 
@@ -285,7 +416,8 @@ export function ProductForm({
         </div>
         <div class="form-group">
           <label class="form-label" for="category">Category (optional)</label>
-          <input id="category" class="form-input" value={formData.category} onInput={(event) => setField('category', (event.target as HTMLInputElement).value)} disabled={loading} />
+          <input id="category" class="form-input" value={formData.category} onInput={(event) => applyCategory((event.target as HTMLInputElement).value)} list="category-options" disabled={loading} />
+          <datalist id="category-options">{categoryOptions.map((value) => <option key={value} value={value} />)}</datalist>
         </div>
       </div>
 
@@ -317,6 +449,11 @@ export function ProductForm({
         </div>
         {priceInput('cp', 'Consultant price (CP) per Stock/set', 'consultantPricePaise')}
       </div>
+      {formData.consultantPricePaise !== null && formData.pricePaise > 0 && formData.pricePaise >= formData.consultantPricePaise && (
+        <div class="margin-line" aria-live="polite">
+          Margin {formatInr(formData.pricePaise - formData.consultantPricePaise)} ({Math.round((1 - formData.consultantPricePaise / formData.pricePaise) * 1000) / 10}%) per set
+        </div>
+      )}
 
       <div class="grid grid-cols-2 gap-4">
         <div class="form-group">
@@ -380,7 +517,7 @@ export function ProductForm({
         </div>
         <div class="form-group">
           <label class="form-label" for="lowStockLevel">Low-stock alert *</label>
-          <input id="lowStockLevel" type="number" class={`form-input ${errors.lowStockLevel ? 'form-input-error' : ''}`} value={formData.lowStockLevel} onInput={(event) => setField('lowStockLevel', Number((event.target as HTMLInputElement).value))} min="0" step="1" inputMode="numeric" required disabled={loading} />
+          <input id="lowStockLevel" type="number" class={`form-input ${errors.lowStockLevel ? 'form-input-error' : ''}`} value={formData.lowStockLevel} onInput={(event) => { lowStockTouched.current = true; setField('lowStockLevel', Number((event.target as HTMLInputElement).value)); }} min="0" step="1" inputMode="numeric" required disabled={loading} />
           {errors.lowStockLevel && <span class="text-error text-sm mt-1 block">{errors.lowStockLevel}</span>}
         </div>
       </div>
@@ -397,7 +534,7 @@ export function ProductForm({
         </label>
       </div>
 
-      <div class="flex gap-3 mt-6">
+      <div class="form-actions-sticky">
         <button type="button" class="btn btn-secondary flex-1" onClick={onCancel} disabled={loading}>Cancel</button>
         <button type="submit" class="btn btn-primary flex-1" disabled={loading || (!isEditing && Boolean(existingCheck?.product))}>{loading ? 'Saving…' : isEditing ? 'Save changes' : 'Create product'}</button>
       </div>

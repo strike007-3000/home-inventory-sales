@@ -158,6 +158,29 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
   const [creatingProduct, setCreatingProduct] = useState(false);
   const [changingStock, setChangingStock] = useState<number | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [variantOf, setVariantOf] = useState<Product | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+  const showToast = (message: string) => {
+    setToast(message);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  };
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+  const searchRef = useRef<HTMLInputElement>(null);
+  // Press "/" anywhere outside a field to jump to search (desktop shortcut).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+      if (!searchRef.current) return;
+      event.preventDefault();
+      searchRef.current.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Fetch all products up to 1000 items once, apply active/inactive filtering on the client
   const {
@@ -239,6 +262,8 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
     const result = await createProduct(data);
     if (result) {
       setCreatingProduct(false);
+      setVariantOf(null);
+      showToast(`${data.name} added`);
       await refreshViews();
     }
   };
@@ -250,6 +275,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
     const result = await updateProduct(id, data, existing.version);
     if (result) {
       setEditingProduct(null);
+      showToast('Changes saved');
       await refreshViews();
     }
   };
@@ -258,7 +284,10 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
     setMutationError(null);
     try {
       const result = await toggleProduct(id, !currentActive);
-      if (result) await refreshViews();
+      if (result) {
+        showToast(currentActive ? 'Product deactivated' : 'Product activated');
+        await refreshViews();
+      }
     } catch (err) {
       setMutationError(err instanceof Error ? err.message : 'Failed to update product status');
     }
@@ -267,6 +296,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
   const handleCancel = () => {
     setEditingProduct(null);
     setCreatingProduct(false);
+    setVariantOf(null);
     setChangingStock(null);
   };
 
@@ -275,6 +305,17 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
   const setupCount = products.filter(needsUnitsPerSetConfiguration).length;
   const productBeingEdited = products.find((product) => product.id === editingProduct);
   const productChangingStock = products.find((product) => product.id === changingStock);
+  const variantInitialData: Partial<ProductFormData> | undefined = variantOf ? {
+    name: variantOf.name,
+    category: variantOf.category ?? '',
+    pricePaise: variantOf.pricePaise,
+    mrpPaise: variantOf.mrpPaise ?? null,
+    consultantPricePaise: variantOf.consultantPricePaise ?? null,
+    unitsPerSet: variantOf.unitsPerSet ?? null,
+    lowStockLevel: variantOf.lowStockLevel,
+    locationId: variantOf.locationId ?? null,
+  } : undefined;
+  const productNameOptions = [...new Set(products.map((product) => product.name))].slice(0, 300);
   const editInitialData: ProductFormData | undefined = productBeingEdited ? {
     name: productBeingEdited.name,
     sku: productBeingEdited.sku ?? '',
@@ -324,13 +365,20 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
           <div class="search-input">
             <SearchIcon />
             <input
+              ref={searchRef}
               type="search"
               class="form-input"
               placeholder="Search name, colour, size, location or SKU…"
               value={searchQuery}
               onInput={(e) => setSearchQuery((e.target as HTMLInputElement).value)}
               aria-label="Search products"
+              list="product-search-options"
+              enterkeyhint="search"
             />
+            <datalist id="product-search-options">
+              {productNameOptions.map((name) => <option key={name} value={name} />)}
+            </datalist>
+            {!searchQuery && <kbd class="search-hint" aria-hidden="true">/</kbd>}
           </div>
           <div class="sales-search-actions product-search-actions">
             <button class="btn btn-secondary" type="button" onClick={() => setSearchQuery('')} disabled={!searchQuery}>Reset</button>
@@ -340,9 +388,9 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
         <div class="sales-filter-pills mb-4" role="group" aria-label="Filter products by status">
           {(
             [
-              { value: 'active', label: 'Active' },
-              { value: 'inactive', label: 'Inactive' },
-              { value: 'all', label: 'All' },
+              { value: 'active', label: `Active (${activeCount})` },
+              { value: 'inactive', label: `Inactive (${inactiveCount})` },
+              { value: 'all', label: `All (${products.length})` },
               { value: 'personal', label: 'Personal' },
               { value: 'setup', label: `Needs setup (${setupCount})` },
             ] as const
@@ -373,6 +421,8 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
 
         {creatingProduct ? (
           <ProductForm
+            {...(variantInitialData ? { initialData: variantInitialData } : {})}
+            products={products}
             locations={locations}
             locationsLoading={locationsLoading}
             onSave={(data) => handleCreate(data)}
@@ -382,6 +432,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
         ) : editingProduct ? (
           <ProductForm
             initialData={editInitialData!}
+            products={products}
             locations={locations}
             locationsLoading={locationsLoading}
             onSave={(data) => handleUpdate(editingProduct, data)}
@@ -398,6 +449,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
             onCancel={handleCancel}
             onSaved={async () => {
               setChangingStock(null);
+              showToast('Stock updated');
               await refreshViews();
             }}
             onConflict={async () => {
@@ -513,6 +565,14 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
                         <EditIcon /> Edit details
                       </button>
                       <button
+                        class="btn btn-secondary btn-sm btn-variant"
+                        onClick={() => { setVariantOf(product); setCreatingProduct(true); }}
+                        type="button"
+                        disabled={toggling}
+                      >
+                        <PlusIcon /> Add variant
+                      </button>
+                      <button
                         class="btn btn-ghost btn-sm product-toggle"
                         onClick={() => handleToggleActive(product.id, product.active)}
                         disabled={toggling}
@@ -534,6 +594,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
           </>
         )}
       </div>
+      {toast && <div class="toast" role="status">{toast}</div>}
     </div>
   );
 }
