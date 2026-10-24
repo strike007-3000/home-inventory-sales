@@ -117,6 +117,11 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
             </div>
           </button>
 
+        </div>
+
+        <details class="stock-value-details mb-4" open={typeof window !== 'undefined' && window.innerWidth >= 1024}>
+          <summary>Stock value</summary>
+        <div class="home-metric-grid">
           <div class="card flex items-center justify-between">
             <div class="min-w-0 flex-1 mr-2">
               <div class="summary-value">{legacyValuation.cpPaise > 0 ? formatInr(legacyValuation.cpPaise) : '₹0'}</div>
@@ -165,6 +170,7 @@ export function DashboardScreen({ state, onNavigate }: DashboardScreenProps) {
             <div class="summary-icon-badge"><ClipboardIcon /></div>
           </div>
         </div>
+        </details>
 
         {valuationComparison.ok && valuationComparison.value.unconfiguredCount > 0 && (
           <div class="dashboard-refresh-message mb-4" role="status">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { LidReferenceDTO } from '../../shared/contracts';
 import { apiGetJson } from '../api';
 import { formatInr } from '../domain';
@@ -6,7 +6,11 @@ import { SearchIcon } from '../icons';
 
 type LidResponse = { items: LidReferenceDTO[]; total: number };
 
-export function LidLookup() {
+interface LidLookupProps {
+  onUseItem?: (item: LidReferenceDTO) => void;
+}
+
+export function LidLookup({ onUseItem }: LidLookupProps) {
   const [input, setInput] = useState('');
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<LidReferenceDTO[]>([]);
@@ -15,22 +19,36 @@ export function LidLookup() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const requestId = useRef(0);
   const load = async (nextQuery: string, offset = 0) => {
+    const id = ++requestId.current;
     offset === 0 ? setLoading(true) : setLoadingMore(true);
     setError(null);
     try {
       const data = await apiGetJson<LidResponse>(`/lids?q=${encodeURIComponent(nextQuery)}&limit=50&offset=${offset}`);
+      if (id !== requestId.current) return;
       setItems((current) => offset === 0 ? data.items : [...current, ...data.items]);
       setTotal(data.total);
     } catch (reason) {
+      if (id !== requestId.current) return;
       setError(reason instanceof Error ? reason.message : 'Could not load LIDS prices');
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (id === requestId.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   };
 
   useEffect(() => { void load(''); }, []);
+
+  // Search as you type; the Search button still works for an immediate search.
+  useEffect(() => {
+    const next = input.trim();
+    if (next === query) return;
+    const timer = setTimeout(() => { setQuery(next); void load(next); }, 350);
+    return () => clearTimeout(timer);
+  }, [input]);
 
   const submit = (event: Event) => {
     event.preventDefault();
@@ -65,10 +83,15 @@ export function LidLookup() {
           </div>
         </form>
 
-        {error && <div class="error-message mb-4" role="alert">{error}</div>}
+        {error && (
+          <div class="error-message retry-row mb-4" role="alert">
+            <span>{error}</span>
+            <button type="button" class="btn btn-sm" onClick={() => void load(query)}>Retry</button>
+          </div>
+        )}
         {!loading && !error && <p class="text-sm text-ink-light mb-4">{total} {total === 1 ? 'result' : 'results'}{query ? ` for “${query}”` : ''}</p>}
 
-        {loading ? <p class="text-ink-light" role="status">Loading LIDS prices…</p> : items.length === 0 && !error ? (
+        {loading ? <div role="status" aria-label="Loading LIDS prices">{[0, 1, 2].map((i) => <div key={i} class="skeleton skeleton-card" />)}</div> : items.length === 0 && !error ? (
           <div class="empty-state"><h2 class="empty-state-title">No LIDS item found</h2><p class="empty-state-message">Try part of the description or an item code.</p></div>
         ) : items.map((item) => (
           <article key={item.id} class="card mb-3">
@@ -85,6 +108,9 @@ export function LidLookup() {
               MRP {formatInr(item.mrpPaise)} · SP {item.specialPricePaise === 0 ? 'not listed' : formatInr(item.specialPricePaise)} · CP {formatInr(item.consultantPricePaise)}
               {item.specialPricePaise === 0 && ' · Showing MRP'}
             </div>
+            {onUseItem && (
+              <button type="button" class="btn btn-soft-blue btn-sm mt-3" onClick={() => onUseItem(item)}>Use for new product</button>
+            )}
           </article>
         ))}
 

@@ -2,9 +2,9 @@
 // Part 1: Imports, types, and app shell.
 
 import { useState, useCallback, useMemo, useEffect } from 'preact/hooks';
-import type { JSX } from 'preact';
+import { Fragment, type JSX } from 'preact';
 import { apiGetJson, apiPostJson, apiPutJson } from './api';
-import type { CreateSaleRequest, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, UpdateSaleRequest } from '../shared/contracts';
+import type { CreateSaleRequest, LidReferenceDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, UpdateSaleRequest } from '../shared/contracts';
 import {
   InventoryState,
   ProductId,
@@ -385,7 +385,7 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
           </div>
         </form>
 
-        <div class="sales-filter-pills mt-3" role="group" aria-label="Filter by status">
+        <div class="sales-filter-pills is-sticky mt-3" role="group" aria-label="Filter by status">
           {(
             [
               { value: 'all', label: 'All sales' },
@@ -408,13 +408,25 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
           ))}
         </div>
 
-        {error && <div class="error-message mt-4" role="alert">{error}</div>}
-        {isLoading ? <p class="text-ink-light mt-4">Loading sales…</p> : visibleSales.length === 0 ? (
+        {error && (
+          <div class="error-message retry-row mt-4" role="alert">
+            <span>{error}</span>
+            <button type="button" class="btn btn-sm" onClick={() => void loadSales(appliedQuery)}>Retry</button>
+          </div>
+        )}
+        {isLoading ? <div class="mt-4" role="status" aria-label="Loading sales">{[0, 1, 2].map((i) => <div key={i} class="skeleton skeleton-card" style={{ height: '88px' }} />)}</div> : visibleSales.length === 0 ? (
           <div class="empty-state"><h2 class="empty-state-title">No sales found</h2><p class="empty-state-message">Try another search or filter.</p></div>
         ) : (
           <div class="mt-4">
-            {visibleSales.map((sale) => (
-              <button key={sale.id} class="card card-clickable w-full text-left" type="button" onClick={() => void openSale(sale.id)}>
+            {visibleSales.map((sale, index) => (
+              <Fragment key={sale.id}>
+              {(index === 0 || visibleSales[index - 1]!.saleDate !== sale.saleDate) && (
+                <div class="day-heading" key={`day-${sale.saleDate}`}>
+                  <span>{new Date(`${sale.saleDate}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                  <span>{formatInr(visibleSales.filter((other) => other.saleDate === sale.saleDate && other.status !== 'cancelled' && !other.isGift).reduce((sum, other) => sum + other.totalPaise, 0))}</span>
+                </div>
+              )}
+              <button class="card card-clickable w-full text-left" type="button" onClick={() => void openSale(sale.id)}>
                 <div class="flex justify-between items-start">
                   <div>
                     <div class="font-semibold">{sale.customerName || (sale.isGift ? 'Gift recipient' : 'Walk-in customer')}</div>
@@ -440,6 +452,7 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
                   <div class="font-semibold">{sale.isGift ? 'Gift' : formatInr(sale.totalPaise)}</div>
                 </div>
               </button>
+              </Fragment>
             ))}
           </div>
         )}
@@ -459,7 +472,27 @@ interface SellScreenProps {
   onNeedsSetup: (productId: ProductId) => void;
 }
 
+const LAST_PAYMENT_KEY = 'inventory:lastPaymentMethod';
+const RECENT_PRODUCTS_KEY = 'inventory:recentSoldProductIds';
+
+function readRecentProductIds(): number[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(RECENT_PRODUCTS_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((id): id is number => Number.isInteger(id)).slice(0, 6) : [];
+  } catch { return []; }
+}
+
 function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup }: SellScreenProps) {
+  const [recentIds, setRecentIds] = useState<number[]>(readRecentProductIds);
+  // A new, empty sale starts with the payment method used last time.
+  useEffect(() => {
+    if (state.saleDraft.lines.length > 0) return;
+    try {
+      const stored = localStorage.getItem(LAST_PAYMENT_KEY);
+      const method = PAYMENT_METHODS.find((m) => m === stored);
+      if (method && method !== state.saleDraft.paymentMethod) onSaleDraftChange(setSalePaymentMethod(state.saleDraft, method));
+    } catch { /* storage unavailable */ }
+  }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
@@ -471,6 +504,11 @@ function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup }: Sell
   const subtotalResult = calculateSaleSubtotal(state.saleDraft, state.products);
 
   const handleQuantityChange = (productId: ProductId, quantity: number) => {
+    if (quantity > 0) {
+      const next = [productId as number, ...recentIds.filter((id) => id !== productId)].slice(0, 6);
+      setRecentIds(next);
+      try { localStorage.setItem(RECENT_PRODUCTS_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+    }
     const newDraft = setSaleLineQuantity(state.saleDraft, productId, quantity);
     onSaleDraftChange(newDraft);
   };
@@ -523,6 +561,14 @@ function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup }: Sell
             aria-label="Search products"
           />
         </div>
+
+        {!searchQuery && recentIds.length > 0 && (
+          <div class="sales-filter-pills mb-3" role="group" aria-label="Recently sold">
+            {recentIds.map((id) => state.products.get(id as ProductId)).filter((p): p is Product => Boolean(p)).map((p) => (
+              <button key={p.id} type="button" class="filter-pill" onClick={() => setSearchQuery(p.name)}>{p.name}</button>
+            ))}
+          </div>
+        )}
 
         {/* Products */}
         {filteredProducts.length === 0 ? (
@@ -663,6 +709,7 @@ function ReviewSaleScreen({
   };
 
   const handlePaymentMethodChange = (method: PaymentMethod) => {
+    try { localStorage.setItem(LAST_PAYMENT_KEY, method); } catch { /* storage unavailable */ }
     onSaleDraftChange(setSalePaymentMethod(saleDraft, method));
   };
 
@@ -2094,6 +2141,7 @@ export function App() {
   const [route, setRoute] = useState<Route>('home');
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [openProductsInSetup, setOpenProductsInSetup] = useState(false);
+  const [lidDraft, setLidDraft] = useState<LidReferenceDTO | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -2231,9 +2279,9 @@ export function App() {
       case 'cancel-sale-confirm':
         return <CancelSaleConfirmScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onStateChange={setState} onNavigate={handleNavigate} />;
       case 'products':
-        return <ProductList initialActiveFilter={openProductsInSetup ? 'setup' : 'active'} selectedProductId={selectedProductId} onNavigate={handleNavigate} onProductsChanged={refreshProducts} />;
+        return <ProductList initialActiveFilter={openProductsInSetup ? 'setup' : 'active'} selectedProductId={selectedProductId} onNavigate={handleNavigate} onProductsChanged={refreshProducts} lidDraft={lidDraft} onLidDraftUsed={() => setLidDraft(null)} />;
       case 'lids':
-        return <LidLookup />;
+        return <LidLookup onUseItem={(item) => { setLidDraft(item); handleNavigate('products'); }} />;
       default:
         return <DashboardScreen state={state} onNavigate={handleNavigate} />;
     }
