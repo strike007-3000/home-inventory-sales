@@ -107,7 +107,7 @@ button.card { font: inherit; color: inherit; }
 .form-group { margin-bottom: 18px; }
 .form-label { display: block; margin-bottom: 7px; font-size: .9rem; font-weight: 700; }
 .form-input { width: 100%; min-height: var(--touch); padding: 11px 13px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--ink); }
-.form-input::placeholder { color: #888f98; }
+.form-input::placeholder { color: #6b727b; }
 .form-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(20,104,232,.12); }
 .form-input-lg { min-height: 56px; font-size: 1.15rem; }
 .form-hint { margin-top: 5px; color: var(--muted); font-size: .82rem; line-height: 1.35; }
@@ -539,3 +539,22 @@ kbd { padding: 1px 6px; border: 1px solid var(--line-strong); border-bottom-widt
   .product-list-row { grid-template-columns: minmax(200px, .8fr) minmax(440px, 1.2fr); }
   .product-actions .btn { white-space: nowrap; }
 }
+
+.stock-value-details > summary { min-height: 48px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); font-weight: 700; cursor: pointer; list-style: none; }
+.stock-value-details > summary::-webkit-details-marker { display: none; }
+.stock-value-details > summary::after { content: "Show"; color: var(--blue-dark); font-size: .875rem; }
+.stock-value-details[open] > summary::after { content: "Hide"; }
+.stock-value-details[open] > summary { margin-bottom: 10px; }
+.setup-help > summary { margin-top: 8px; color: var(--blue-dark); font-size: .875rem; font-weight: 600; cursor: pointer; min-height: 32px; }
+.setup-help p { margin: 6px 0 0; }
+
+.skeleton { border-radius: 8px; background: linear-gradient(90deg, #eceef1 25%, #f6f7f9 50%, #eceef1 75%); background-size: 200% 100%; animation: skeleton-shimmer 1.2s ease-in-out infinite; }
+.skeleton-card { height: 150px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: var(--radius); }
+@keyframes skeleton-shimmer { to { background-position: -200% 0; } }
+
+.day-heading { margin: 18px 0 8px; display: flex; justify-content: space-between; align-items: baseline; color: var(--muted); font-size: .875rem; font-weight: 700; }
+.day-heading span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; }
+.sales-filter-pills.is-sticky { position: sticky; top: 0; z-index: 15; margin-inline: -18px; padding: 8px 18px; background: var(--canvas); }
+@media (min-width: 1024px) { .sales-filter-pills.is-sticky { margin-inline: 0; padding-inline: 0; } }
+.retry-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.retry-row .btn { flex: 0 0 auto; min-height: 40px; background: #fff; color: var(--red); border-color: var(--red); }

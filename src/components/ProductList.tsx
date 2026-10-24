@@ -4,7 +4,7 @@ import { calculateProportionalLineTotal, formatInr, getProductSetupIssue, needsU
 import { ProductForm } from './ProductForm';
 import { useStockChange } from '../hooks/useStock';
 import type { Product } from '../domain';
-import type { StockChangeReason } from '../../shared/contracts';
+import type { LidReferenceDTO, StockChangeReason } from '../../shared/contracts';
 import { ApiError } from '../api';
 import {
   SearchIcon,
@@ -34,15 +34,16 @@ function formatDelta(value: number): string {
 
 interface StockChangeFormProps {
   product: Product;
+  initialReason?: StockChangeReason | '';
   onCancel: () => void;
   onSaved: () => Promise<void>;
   onConflict: () => Promise<void>;
 }
 
-function StockChangeForm({ product, onCancel, onSaved, onConflict }: StockChangeFormProps) {
+function StockChangeForm({ product, initialReason = '', onCancel, onSaved, onConflict }: StockChangeFormProps) {
   const [quantity, setQuantity] = useState(String(product.quantity));
   const [setStockQuantity, setSetStockQuantity] = useState(String(product.setStockQuantity ?? 0));
-  const [reason, setReason] = useState<StockChangeReason | ''>('');
+  const [reason, setReason] = useState<StockChangeReason | ''>(initialReason);
   const [note, setNote] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const { execute, loading, error } = useStockChange();
@@ -149,16 +150,27 @@ interface ProductListProps {
   selectedProductId?: number | null;
   onNavigate?: (route: any) => void;
   onProductsChanged?: () => Promise<void>;
+  lidDraft?: LidReferenceDTO | null;
+  onLidDraftUsed?: () => void;
 }
 
-export function ProductList({ initialActiveFilter = 'active', selectedProductId, onNavigate, onProductsChanged }: ProductListProps) {
+export function ProductList({ initialActiveFilter = 'active', selectedProductId, onNavigate, onProductsChanged, lidDraft = null, onLidDraftUsed }: ProductListProps) {
   const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all' | 'personal' | 'setup'>(initialActiveFilter);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingProduct, setEditingProduct] = useState<number | null>(null);
   const [creatingProduct, setCreatingProduct] = useState(false);
   const [changingStock, setChangingStock] = useState<number | null>(null);
+  const [stockReasonPreset, setStockReasonPreset] = useState<StockChangeReason | ''>('');
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [variantOf, setVariantOf] = useState<Product | null>(null);
+  const [lidSource, setLidSource] = useState<LidReferenceDTO | null>(null);
+  // Open the create form pre-filled from a LIDS item chosen on the LIDS screen.
+  useEffect(() => {
+    if (!lidDraft) return;
+    setLidSource(lidDraft);
+    setCreatingProduct(true);
+    onLidDraftUsed?.();
+  }, [lidDraft]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
   const showToast = (message: string) => {
@@ -263,6 +275,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
     if (result) {
       setCreatingProduct(false);
       setVariantOf(null);
+      setLidSource(null);
       showToast(`${data.name} added`);
       await refreshViews();
     }
@@ -297,7 +310,9 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
     setEditingProduct(null);
     setCreatingProduct(false);
     setVariantOf(null);
+    setLidSource(null);
     setChangingStock(null);
+    setStockReasonPreset('');
   };
 
   // Per-status counts are only exact when every product was loaded.
@@ -307,6 +322,13 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
   const setupCount = products.filter(needsUnitsPerSetConfiguration).length;
   const productBeingEdited = products.find((product) => product.id === editingProduct);
   const productChangingStock = products.find((product) => product.id === changingStock);
+  const lidInitialData: Partial<ProductFormData> | undefined = lidSource ? {
+    name: lidSource.description,
+    sku: lidSource.itemCode,
+    mrpPaise: lidSource.mrpPaise,
+    pricePaise: lidSource.displayPricePaise,
+    consultantPricePaise: lidSource.consultantPricePaise,
+  } : undefined;
   const variantInitialData: Partial<ProductFormData> | undefined = variantOf ? {
     name: variantOf.name,
     category: variantOf.category ?? '',
@@ -410,8 +432,9 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
         </div>
 
         {fetchError && (
-          <div class="error-message mb-4" role="alert">
-            {fetchError}
+          <div class="error-message retry-row mb-4" role="alert">
+            <span>{fetchError}</span>
+            <button type="button" class="btn btn-sm" onClick={() => void refetch()}>Retry</button>
           </div>
         )}
 
@@ -423,7 +446,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
 
         {creatingProduct ? (
           <ProductForm
-            {...(variantInitialData ? { initialData: variantInitialData } : {})}
+            {...((variantInitialData ?? lidInitialData) ? { initialData: (variantInitialData ?? lidInitialData)! } : {})}
             products={products}
             locations={locations}
             locationsLoading={locationsLoading}
@@ -441,6 +464,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
             onCancel={handleCancel}
             isEditing={true}
             onChangeStock={() => {
+              setStockReasonPreset('');
               setChangingStock(editingProduct);
               setEditingProduct(null);
             }}
@@ -448,9 +472,11 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
         ) : productChangingStock ? (
           <StockChangeForm
             product={productChangingStock}
+            initialReason={stockReasonPreset}
             onCancel={handleCancel}
             onSaved={async () => {
               setChangingStock(null);
+              setStockReasonPreset('');
               showToast('Stock updated');
               await refreshViews();
             }}
@@ -532,9 +558,12 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
                           )}
                         </div>
                         {setupIssue && (
-                          <div class="text-sm text-ink-light mt-2">
-                            {setupIssue} Use Edit details for Pieces per set or Change stock to correct the saved stock.
-                          </div>
+                          <details class="setup-help">
+                            <summary>How to fix</summary>
+                            <p class="text-sm text-ink-light">
+                              {setupIssue} Use Edit details for Pieces per set or Change stock to correct the saved stock.
+                            </p>
+                          </details>
                         )}
                     </div>
 
@@ -552,11 +581,19 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
                     <div class="product-actions">
                       <button
                         class="btn btn-soft-blue btn-sm"
-                        onClick={() => setChangingStock(product.id)}
+                        onClick={() => { setStockReasonPreset(''); setChangingStock(product.id); }}
                         type="button"
                         disabled={toggling}
                       >
                         Change stock
+                      </button>
+                      <button
+                        class="btn btn-secondary btn-sm"
+                        onClick={() => { setStockReasonPreset('delivery'); setChangingStock(product.id); }}
+                        type="button"
+                        disabled={toggling}
+                      >
+                        <PlusIcon /> Stock arrived
                       </button>
                       <button
                         class="btn btn-secondary btn-sm"
@@ -589,8 +626,8 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
             )}
 
             {loading && (
-              <div class="text-center text-ink-light mt-4">
-                Loading products...
+              <div role="status" aria-label="Loading products">
+                {[0, 1, 2].map((i) => <div key={i} class="skeleton skeleton-card" />)}
               </div>
             )}
           </>
