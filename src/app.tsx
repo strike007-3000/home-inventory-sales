@@ -483,7 +483,7 @@ function readRecentProductIds(): number[] {
 }
 
 function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup }: SellScreenProps) {
-  const [recentIds, setRecentIds] = useState<number[]>(readRecentProductIds);
+  const [recentIds] = useState<number[]>(readRecentProductIds);
   // A new, empty sale starts with the payment method used last time.
   useEffect(() => {
     if (state.saleDraft.lines.length > 0) return;
@@ -504,11 +504,6 @@ function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup }: Sell
   const subtotalResult = calculateSaleSubtotal(state.saleDraft, state.products);
 
   const handleQuantityChange = (productId: ProductId, quantity: number) => {
-    if (quantity > 0) {
-      const next = [productId as number, ...recentIds.filter((id) => id !== productId)].slice(0, 6);
-      setRecentIds(next);
-      try { localStorage.setItem(RECENT_PRODUCTS_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
-    }
     const newDraft = setSaleLineQuantity(state.saleDraft, productId, quantity);
     onSaleDraftChange(newDraft);
   };
@@ -709,7 +704,6 @@ function ReviewSaleScreen({
   };
 
   const handlePaymentMethodChange = (method: PaymentMethod) => {
-    try { localStorage.setItem(LAST_PAYMENT_KEY, method); } catch { /* storage unavailable */ }
     onSaleDraftChange(setSalePaymentMethod(saleDraft, method));
   };
 
@@ -743,6 +737,12 @@ function ReviewSaleScreen({
       const sale = await apiPostJson<SaleDTO>('/sales', request);
       const record = { ...sale, paymentMethod: sale.paymentMethod as PaymentMethod };
       setLastCompletedSaleId(sale.id);
+      // Remember the payment method and products only for sales that were actually recorded.
+      try {
+        if (!saleDraft.isGift) localStorage.setItem(LAST_PAYMENT_KEY, saleDraft.paymentMethod);
+        const ids = [...lineItems.map((item) => item.product.id as number), ...readRecentProductIds()];
+        localStorage.setItem(RECENT_PRODUCTS_KEY, JSON.stringify([...new Set(ids)].slice(0, 6)));
+      } catch { /* storage unavailable */ }
       onStateChange((previous) => ({
         ...previous,
         sales: sortSalesNewestFirst([...previous.sales.filter((item) => item.id !== sale.id), record]),

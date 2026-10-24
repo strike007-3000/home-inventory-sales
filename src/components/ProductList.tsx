@@ -312,6 +312,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
     setVariantOf(null);
     setLidSource(null);
     setChangingStock(null);
+    setStockReasonPreset('');
   };
 
   // Per-status counts are only exact when every product was loaded.
@@ -463,6 +464,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
             onCancel={handleCancel}
             isEditing={true}
             onChangeStock={() => {
+              setStockReasonPreset('');
               setChangingStock(editingProduct);
               setEditingProduct(null);
             }}
@@ -474,6 +476,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
             onCancel={handleCancel}
             onSaved={async () => {
               setChangingStock(null);
+              setStockReasonPreset('');
               showToast('Stock updated');
               await refreshViews();
             }}
