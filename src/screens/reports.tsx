@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import type { ReportsDTO } from '../../shared/contracts';
+import type { ProductDTO, ReportsDTO } from '../../shared/contracts';
 import { apiGetJson } from '../api';
 import { formatInr } from '../domain';
+import { buildXlsx } from '../xlsx';
 
 type Tab = 'sales' | 'products' | 'outstanding';
 type Preset = 'this-month' | 'last-month' | 'last-30' | 'custom';
@@ -40,9 +41,8 @@ function csvCell(value: string | number): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
-function downloadCsv(filename: string, header: string[], rows: (string | number)[][]) {
-  const csv = [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' }));
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
@@ -50,7 +50,41 @@ function downloadCsv(filename: string, header: string[], rows: (string | number)
   URL.revokeObjectURL(url);
 }
 
+function downloadCsv(filename: string, header: string[], rows: (string | number)[][]) {
+  const csv = [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+  downloadBlob(filename, new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' }));
+}
+
 const rupees = (paise: number) => (paise / 100).toFixed(2);
+
+// Whole-rupee numbers stay clean (1100, not 1100.00) so the sheet matches the existing stock spreadsheet.
+const rupeeNumber = (paise: number) => Math.round(paise) / 100;
+
+// Values are price x Stock/set, like the Dashboard's Stock/set valuation. Missing MRP/CP stay blank.
+async function exportFullInventory() {
+  const items: ProductDTO[] = [];
+  let total = 0;
+  do {
+    const page = await apiGetJson<{ items: ProductDTO[]; total: number }>(`/products?active=active&limit=1000&offset=${items.length}`);
+    items.push(...page.items);
+    total = page.total;
+    if (page.items.length === 0) break; // guard against a shrinking catalog looping forever
+  } while (items.length < total);
+  const rows = items
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((p, i) => {
+      const setStock = p.setStockQuantity;
+      const price = (paise: number | null) => (paise === null ? ['', ''] : [rupeeNumber(paise), rupeeNumber(paise * setStock)]);
+      return [
+        i + 1, p.name, p.colour ?? '', p.size ?? '', setStock, p.quantity,
+        ...price(p.mrpPaise), ...price(p.pricePaise),
+        p.mrpPaise === null ? '' : rupeeNumber(p.mrpPaise - p.pricePaise),
+        ...price(p.consultantPricePaise), p.locationName ?? '',
+      ];
+    });
+  downloadBlob(`inventory-${iso(new Date())}.xlsx`, buildXlsx('Inventory',
+    ['SR', 'NAME OF THE PRODUCTS', 'COLOURS', 'SIZE', 'STOCK/SET', 'QTY', 'MRP', 'VALUE', 'SRP', 'VALUE', 'SAVE', 'CP', 'VALUE', 'LOCATION'], rows));
+}
 
 function Delta({ current, previous }: { current: number; previous: number }) {
   if (previous === 0) return <span class="summary-label">{current === 0 ? 'No prior sales' : 'New vs prior period'}</span>;
@@ -124,6 +158,7 @@ export function ReportsScreen({ onOpenSale }: ReportsScreenProps) {
           <h1 class="text-2xl font-semibold">Reports</h1>
           <div class="header-actions">
             <button class="btn btn-navy btn-sm" type="button" onClick={exportCurrent} disabled={!data}>Export CSV</button>
+            <button class="btn btn-secondary btn-sm" type="button" onClick={() => { exportFullInventory().catch((err: Error) => setError(err.message)); }}>Full inventory (Excel)</button>
           </div>
         </div>
 
