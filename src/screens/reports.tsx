@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { ProductDTO, ReportsDTO } from '../../shared/contracts';
 import { apiGetJson } from '../api';
 import { formatInr } from '../domain';
+import { buildXlsx } from '../xlsx';
 
 type Tab = 'sales' | 'products' | 'outstanding';
 type Preset = 'this-month' | 'last-month' | 'last-30' | 'custom';
@@ -40,14 +41,18 @@ function csvCell(value: string | number): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
-function downloadCsv(filename: string, header: string[], rows: (string | number)[][]) {
-  const csv = [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' }));
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadCsv(filename: string, header: string[], rows: (string | number)[][]) {
+  const csv = [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+  downloadBlob(filename, new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' }));
 }
 
 const rupees = (paise: number) => (paise / 100).toFixed(2);
@@ -71,8 +76,8 @@ async function exportFullInventory() {
         ...price(p.consultantPricePaise), p.locationName ?? '',
       ];
     });
-  downloadCsv(`inventory-${iso(new Date())}.csv`,
-    ['SR', 'NAME OF THE PRODUCTS', 'COLOURS', 'SIZE', 'STOCK/SET', 'QTY', 'MRP', 'VALUE', 'SRP', 'VALUE', 'SAVE', 'CP', 'VALUE', 'LOCATION'], rows);
+  downloadBlob(`inventory-${iso(new Date())}.xlsx`, buildXlsx('Inventory',
+    ['SR', 'NAME OF THE PRODUCTS', 'COLOURS', 'SIZE', 'STOCK/SET', 'QTY', 'MRP', 'VALUE', 'SRP', 'VALUE', 'SAVE', 'CP', 'VALUE', 'LOCATION'], rows));
 }
 
 function Delta({ current, previous }: { current: number; previous: number }) {
@@ -147,7 +152,7 @@ export function ReportsScreen({ onOpenSale }: ReportsScreenProps) {
           <h1 class="text-2xl font-semibold">Reports</h1>
           <div class="header-actions">
             <button class="btn btn-navy btn-sm" type="button" onClick={exportCurrent} disabled={!data}>Export CSV</button>
-            <button class="btn btn-secondary btn-sm" type="button" onClick={() => { exportFullInventory().catch((err: Error) => setError(err.message)); }}>Full inventory</button>
+            <button class="btn btn-secondary btn-sm" type="button" onClick={() => { exportFullInventory().catch((err: Error) => setError(err.message)); }}>Full inventory (Excel)</button>
           </div>
         </div>
 
