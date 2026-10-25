@@ -62,9 +62,15 @@ const rupeeNumber = (paise: number) => Math.round(paise) / 100;
 
 // Values are price x Stock/set, like the Dashboard's Stock/set valuation. Missing MRP/CP stay blank.
 async function exportFullInventory() {
-  const { items } = await apiGetJson<{ items: ProductDTO[] }>('/products?active=all&limit=1000');
+  const items: ProductDTO[] = [];
+  let total = 0;
+  do {
+    const page = await apiGetJson<{ items: ProductDTO[]; total: number }>(`/products?active=active&limit=1000&offset=${items.length}`);
+    items.push(...page.items);
+    total = page.total;
+    if (page.items.length === 0) break; // guard against a shrinking catalog looping forever
+  } while (items.length < total);
   const rows = items
-    .filter((p) => p.active)
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((p, i) => {
       const setStock = p.setStockQuantity;
