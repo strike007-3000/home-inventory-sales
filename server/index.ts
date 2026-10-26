@@ -28,6 +28,7 @@ import {
 import { handleStockDelivery, handleStockCount, handleStockAdjustment, handleStockChange } from './stock';
 import { handleImportPreview, handleImportCommit } from './import';
 import { handleCancelSale, handleCreateSale, handleGetSale, handleListSales, handleRecordPayment, handleUpdatePaymentMethod, handleUpdateSale } from './sales';
+import { handleAddDeposit, handleCancelPlan, handleCreatePlan, handleGetPlan, handleListPlans } from './plans';
 import { handleListLids } from './lids';
 import { handleReports } from './reports';
 
@@ -189,6 +190,18 @@ async function routeApi(
   }
   if (saleMatch && saleMatch[2] === '/payments' && method === 'POST') {
     return handleRecordPayment(saleId!, request, env);
+  }
+
+  // Savings plans
+  if (path === '/plans' && method === 'GET') return handleListPlans(env);
+  if (path === '/plans' && method === 'POST') return handleCreatePlan(request, env);
+  const planMatch = path.match(/^\/plans\/(\d+)(\/(deposits|cancel))?$/);
+  if (planMatch) {
+    const planId = Number(planMatch[1]);
+    if (!Number.isSafeInteger(planId) || planId <= 0) return errorResponse('Invalid plan ID', 400);
+    if (!planMatch[2] && method === 'GET') return handleGetPlan(planId, env);
+    if (planMatch[3] === 'deposits' && method === 'POST') return handleAddDeposit(planId, request, env);
+    if (planMatch[3] === 'cancel' && method === 'POST') return handleCancelPlan(planId, request, env);
   }
 
   // Reports

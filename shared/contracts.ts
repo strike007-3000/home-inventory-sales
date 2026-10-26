@@ -131,6 +131,8 @@ export interface CreateSaleRequest {
   readonly discountPaise: number;
   readonly paymentMethod: string;
   readonly receivedPaise: number;
+  /** Redeem an open savings plan: its deposits become this sale's payments (receivedPaise must be 0). */
+  readonly planId?: number;
 }
 
 export interface PaymentDTO {
@@ -265,4 +267,39 @@ export interface ReportsDTO {
     saleId: number; saleNumber: string; saleDate: string; customerName: string | null;
     totalPaise: number; paidPaise: number; balancePaise: number;
   }[];
+}
+
+// ============================================================================
+// Savings plans
+// ============================================================================
+
+export interface PlanSummaryDTO {
+  readonly id: number;
+  readonly customerName: string;
+  readonly monthlyPaise: number;
+  readonly startDate: string;
+  readonly months: number | null;
+  readonly status: 'open' | 'redeemed' | 'cancelled';
+  readonly savedPaise: number;
+  readonly refundPaise: number;
+  readonly saleId: number | null;
+}
+
+export interface PlanDTO extends PlanSummaryDTO {
+  readonly cancellationReason?: string;
+  readonly deposits: readonly PaymentDTO[];
+}
+
+export interface CreatePlanRequest {
+  readonly customerName: string;
+  readonly monthlyPaise: number;
+  readonly startDate: string;
+  readonly months?: number | null;
+}
+
+export interface PlanDepositRequest {
+  readonly amountPaise: number;
+  readonly paymentMethod: string;
+  /** YYYY-MM-DD; defaults to now. */
+  readonly receivedDate?: string;
 }

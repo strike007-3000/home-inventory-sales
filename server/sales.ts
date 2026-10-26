@@ -178,6 +178,9 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
       return errorResponse('Amount received must be a non-negative safe integer', 400, 'receivedPaise');
     }
   }
+  if (body.planId !== undefined && (!Number.isSafeInteger(body.planId) || body.planId <= 0 || isGift || body.receivedPaise !== 0)) {
+    return errorResponse('planId must be a plan ID on a non-gift sale with no amount received', 400, 'planId');
+  }
   if (typeof body.saleDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.saleDate)) {
     return errorResponse('Sale date must be a valid date', 400, 'saleDate');
   }
@@ -185,7 +188,7 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
   if (Number.isNaN(parsedSaleDate.getTime()) || parsedSaleDate.toISOString().slice(0, 10) !== body.saleDate) {
     return errorResponse('Sale date must be a valid date', 400, 'saleDate');
   }
-  const customerName = body.customerName?.trim() || null;
+  let customerName = body.customerName?.trim() || null;
   if (customerName && customerName.length > 200) {
     return errorResponse('Customer name must be at most 200 characters', 400, 'customerName');
   }
@@ -193,6 +196,18 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
   const existing = await env.DB.prepare('SELECT id FROM sales WHERE idempotency_key = ?')
     .bind(body.idempotencyKey.trim()).first<{ id: number }>();
   if (existing) return jsonResponse(await readSale(existing.id, env));
+
+  let planDeposits: { amount_minor: number; payment_method: string; received_at: string }[] = [];
+  if (body.planId !== undefined) {
+    const plan = await env.DB.prepare("SELECT customer_name FROM plans WHERE id = ? AND status = 'open'")
+      .bind(body.planId).first<{ customer_name: string }>();
+    if (!plan) return errorResponse('Plan is not open', 409, 'planId');
+    customerName = customerName ?? plan.customer_name;
+    planDeposits = (await env.DB.prepare(
+      'SELECT amount_minor, payment_method, received_at FROM plan_deposits WHERE plan_id = ? ORDER BY received_at, id',
+    ).bind(body.planId).all<typeof planDeposits[number]>()).results;
+  }
+  const savedPaise = planDeposits.reduce((sum, d) => sum + d.amount_minor, 0);
 
   const seen = new Set<number>();
   for (const line of body.lines) {
@@ -278,20 +293,33 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
   if (effectiveReceived > total) return errorResponse('Amount received cannot exceed sale total', 400, 'receivedPaise');
   const paymentMethod = isGift ? 'other' : body.paymentMethod;
 
+  // Plan deposits become the sale's payments, capped at the total; any excess is refunded to the customer.
+  let remaining = total;
+  const planPayments = planDeposits.flatMap((d) => {
+    const amount = Math.min(d.amount_minor, remaining);
+    remaining -= amount;
+    return amount > 0 ? [{ ...d, amount_minor: amount }] : [];
+  });
+  const refundPaise = savedPaise - (total - remaining);
+
   const now = new Date().toISOString();
   const saleNumber = `SALE-${now.slice(0, 10).replaceAll('-', '')}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
   const key = body.idempotencyKey.trim();
   const guards = body.lines.map(() =>
     `EXISTS (SELECT 1 FROM products WHERE id = ? AND active = 1 AND stock_quantity = ? AND set_stock_quantity = ? AND version = ?)`,
   ).join(' AND ');
-  const guardValues = body.lines.flatMap((line) => {
+  const guardValues: (string | number)[] = body.lines.flatMap((line) => {
     const product = products.get(line.productId)!;
     return [line.productId, product.stock_quantity, product.set_stock_quantity, product.version];
   });
+  // The plan must still be open with the same deposits we priced against.
+  const planGuard = body.planId === undefined ? ''
+    : ` AND EXISTS (SELECT 1 FROM plans WHERE id = ? AND status = 'open' AND (SELECT COALESCE(SUM(amount_minor), 0) FROM plan_deposits WHERE plan_id = ?) = ?)`;
+  if (body.planId !== undefined) guardValues.push(body.planId, body.planId, savedPaise);
   const batch: D1PreparedStatement[] = [
     env.DB.prepare(
       `INSERT INTO sales (sale_number, sold_at, sale_date, customer_name, is_gift, subtotal_minor, discount_minor, total_minor, status, payment_method, idempotency_key)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${guards}`,
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${guards}${planGuard}`,
     ).bind(saleNumber, now, body.saleDate, customerName, isGift ? 1 : 0, subtotal, effectiveDiscount, total, 'completed', paymentMethod, key, ...guardValues),
   ];
   if (!isGift && effectiveReceived > 0) {
@@ -299,6 +327,19 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
       `INSERT INTO sale_payments (sale_id, amount_minor, payment_method, received_at)
        SELECT id, ?, ?, ? FROM sales WHERE idempotency_key = ?`,
     ).bind(effectiveReceived, paymentMethod, now, key));
+  }
+
+  for (const payment of planPayments) {
+    batch.push(env.DB.prepare(
+      `INSERT INTO sale_payments (sale_id, amount_minor, payment_method, received_at)
+       SELECT id, ?, ?, ? FROM sales WHERE idempotency_key = ?`,
+    ).bind(payment.amount_minor, payment.payment_method, payment.received_at, key));
+  }
+  if (body.planId !== undefined) {
+    batch.push(env.DB.prepare(
+      `UPDATE plans SET status = 'redeemed', sale_id = (SELECT id FROM sales WHERE idempotency_key = ?), refund_minor = ?, closed_at = ?
+       WHERE id = ? AND status = 'open' AND EXISTS (SELECT 1 FROM sales WHERE idempotency_key = ?)`,
+    ).bind(key, refundPaise, now, body.planId, key));
   }
 
   for (const line of body.lines) {
