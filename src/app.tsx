@@ -2313,7 +2313,7 @@ export function App() {
           />
         );
       case 'plans':
-        return <PlansScreen onRedeem={(plan) => { setRedeemPlan(plan); handleNavigate('sell'); }} onOpenSale={(id) => void openReportSale(id)} />;
+        return <PlansScreen onRedeem={(plan) => { handleSaleDraftChange(setSaleIsGift(state.saleDraft, false)); setRedeemPlan(plan); handleNavigate('sell'); }} onOpenSale={(id) => void openReportSale(id)} />;
       case 'sale-completed':
         return <SaleCompletedScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onNavigate={handleNavigate} />;
       case 'stock':

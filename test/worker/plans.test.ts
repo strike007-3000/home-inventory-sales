@@ -71,6 +71,8 @@ describe('Savings plans', () => {
     expect(plan.savedPaise).toBe(100000);
     expect(plan.deposits[0]!.receivedAt.slice(0, 10)).toBe('2026-06-05');
     expect((await deposit(id, 100, '2999-01-01')).status).toBe(400);
+    expect((await deposit(id, 100, '2026-13-01')).status).toBe(400);
+    expect((await api('/api/plans', 'POST', { customerName: 'X', monthlyPaise: 100, startDate: '2026-13-01' })).status).toBe(400);
   });
 
   it('redeems into a sale: deposits become payments, stock is deducted, remainder stays as balance', async () => {

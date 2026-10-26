@@ -21,8 +21,9 @@ const PLAN_SELECT = `SELECT p.id, p.customer_name, p.monthly_minor, p.start_date
   FROM plans p`;
 
 function isValidDate(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
-    && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 function toSummary(row: PlanRow): PlanSummaryDTO {
