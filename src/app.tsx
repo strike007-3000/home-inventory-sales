@@ -4,7 +4,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'preact/hooks';
 import { Fragment, type JSX } from 'preact';
 import { apiGetJson, apiPostJson, apiPutJson } from './api';
-import type { CreateSaleRequest, LidReferenceDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, UpdateSaleRequest } from '../shared/contracts';
+import type { CreateSaleRequest, LidReferenceDTO, PlanDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, UpdateSaleRequest } from '../shared/contracts';
 import {
   InventoryState,
   ProductId,
@@ -44,6 +44,7 @@ import {
   SellIcon,
   StockIcon,
   ReportsIcon,
+  PlansIcon,
   ProductsIcon,
   SearchIcon,
   CheckIcon,
@@ -64,6 +65,7 @@ import { LoginScreen } from './screens/login';
 import { ReportsScreen } from './screens/reports';
 import { ProductList } from './components/ProductList';
 import { LidLookup } from './components/LidLookup';
+import { PlansScreen } from './screens/plans';
 
 // Route type
 type Route =
@@ -80,7 +82,8 @@ type Route =
   | 'cancel-sale-confirm'
   | 'products'
   | 'lids'
-  | 'reports';
+  | 'reports'
+  | 'plans';
 
 type InventoryStateSetter = (
   value: InventoryState | ((previous: InventoryState) => InventoryState),
@@ -111,6 +114,7 @@ function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
     { route: 'products', label: 'Products', Icon: ProductsIcon },
     { route: 'lids', label: 'LIDS', Icon: SearchIcon },
     { route: 'stock', label: 'Stock', Icon: StockIcon },
+    { route: 'plans', label: 'Plans', Icon: PlansIcon },
     { route: 'reports', label: 'Reports', Icon: ReportsIcon },
   ];
   const activeRoute: Route = ['sell', 'review-sale', 'sale-completed', 'view-sale', 'cancel-sale-confirm'].includes(currentRoute)
@@ -472,6 +476,7 @@ function SalesHistoryScreen({ state, onStateChange, onNavigate, setLastCompleted
 interface SellScreenProps {
   state: InventoryState;
   onSaleDraftChange: (draft: InventoryState['saleDraft']) => void;
+  redeemPlan: PlanDTO | null;
   onNavigate: (route: Route) => void;
   onNeedsSetup: (productId: ProductId) => void;
 }
@@ -486,7 +491,7 @@ function readRecentProductIds(): number[] {
   } catch { return []; }
 }
 
-function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup }: SellScreenProps) {
+function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup, redeemPlan }: SellScreenProps) {
   const [recentIds] = useState<number[]>(readRecentProductIds);
   // A new, empty sale starts with the payment method used last time.
   useEffect(() => {
@@ -545,6 +550,12 @@ function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup }: Sell
                 Cancel
               </button>
             </div>
+          </div>
+        )}
+
+        {redeemPlan && (
+          <div class="card mb-4">
+            Redeeming savings plan for <strong>{redeemPlan.customerName}</strong> — {formatInr(redeemPlan.savedPaise)} saved. Choose the products.
           </div>
         )}
 
@@ -625,6 +636,8 @@ interface ReviewSaleScreenProps {
   onStateChange: InventoryStateSetter;
   onNavigate: (route: Route) => void;
   setLastCompletedSaleId: (id: number) => void;
+  redeemPlan: PlanDTO | null;
+  onPlanRedeemed: () => void;
 }
 
 function ReviewSaleScreen({
@@ -634,11 +647,13 @@ function ReviewSaleScreen({
   onStateChange,
   onNavigate,
   setLastCompletedSaleId,
+  redeemPlan,
+  onPlanRedeemed,
 }: ReviewSaleScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-  const [customerName, setCustomerName] = useState('');
+  const [customerName, setCustomerName] = useState(redeemPlan?.customerName ?? '');
   const [receivedPaise, setReceivedPaise] = useState<number | null>(null);
   const [saleDate, setSaleDate] = useState(() => {
     const now = new Date();
@@ -663,7 +678,7 @@ function ReviewSaleScreen({
   const subtotalResult = calculateSaleSubtotal(saleDraft, products);
   const subtotalPaise = subtotalResult.ok ? subtotalResult.value : 0;
   const totalPaise = Math.max(0, subtotalPaise - saleDraft.discountPaise);
-  const effectiveReceivedPaise = receivedPaise ?? totalPaise;
+  const effectiveReceivedPaise = redeemPlan ? 0 : receivedPaise ?? totalPaise;
   const setupWarnings = saleDraft.lines.flatMap((line) => {
     const product = products.get(line.productId);
     if (!product) return [];
@@ -737,6 +752,7 @@ function ReviewSaleScreen({
         discountPaise: saleDraft.isGift ? 0 : saleDraft.discountPaise,
         paymentMethod: saleDraft.isGift ? 'other' : saleDraft.paymentMethod,
         receivedPaise: saleDraft.isGift ? 0 : effectiveReceivedPaise,
+        ...(redeemPlan ? { planId: redeemPlan.id } : {}),
       };
       const sale = await apiPostJson<SaleDTO>('/sales', request);
       const record = { ...sale, paymentMethod: sale.paymentMethod as PaymentMethod };
@@ -752,6 +768,7 @@ function ReviewSaleScreen({
         sales: sortSalesNewestFirst([...previous.sales.filter((item) => item.id !== sale.id), record]),
       }));
       onSaleDraftChange(clearSaleDraft(saleDraft));
+      onPlanRedeemed();
       onNavigate('sale-completed');
 
       // The POST response is authoritative: at this point the sale is committed.
@@ -816,14 +833,14 @@ function ReviewSaleScreen({
 
         <div class="card">
           <div class="form-group">
-            <label class="flex items-center gap-2 cursor-pointer font-semibold mb-3">
+            {!redeemPlan && <label class="flex items-center gap-2 cursor-pointer font-semibold mb-3">
               <input
                 type="checkbox"
                 checked={saleDraft.isGift}
                 onChange={(e) => onSaleDraftChange(setSaleIsGift(saleDraft, (e.target as HTMLInputElement).checked))}
               />
               Mark as Gift sale
-            </label>
+            </label>}
             {saleDraft.isGift && (
               <div class="text-sm text-ink-light mb-3">
                 Stock will be reduced. No payment will be due.
@@ -935,8 +952,19 @@ function ReviewSaleScreen({
           </div>
         </div>
 
+        {redeemPlan && (
+          <div class="card">
+            <div class="font-semibold">Savings plan: {formatInr(redeemPlan.savedPaise)} saved</div>
+            <div class="text-sm text-ink-light mt-1">
+              {redeemPlan.savedPaise >= totalPaise
+                ? `Fully paid from the plan.${redeemPlan.savedPaise > totalPaise ? ` ${formatInr(redeemPlan.savedPaise - totalPaise)} is refund due to the customer.` : ''}`
+                : `${formatInr(totalPaise - redeemPlan.savedPaise)} will remain due after the plan amount is applied.`}
+            </div>
+          </div>
+        )}
+
         {/* Payment method */}
-        {!saleDraft.isGift && (
+        {!saleDraft.isGift && !redeemPlan && (
           <div class="card">
             <div class="form-group">
               <label class="form-label" for="amount-received">Amount received now (₹)</label>
@@ -1932,11 +1960,12 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate,
           )}
 
           {/* Recorded Payments list with per-payment edit */}
-          {!sale.isGift && sale.payments && sale.payments.length > 0 && (
+          {!sale.isGift && sale.payments && (
             <div class="card mb-4">
               <h2 class="text-md font-semibold mb-3">{sale.payments.length === 1 ? 'Payment' : 'Payments'}</h2>
+              {sale.payments.length === 0 && <div class="text-sm text-ink-light">No payments yet</div>}
               {paymentCorrectionError && <div class="error-message mb-3 non-printable" role="alert">{paymentCorrectionError}</div>}
-              {sale.payments.map((p) => (
+              {sale.payments.map((p, i) => (
                 <div key={p.id} class="py-2 border-b border-line last:border-b-0">
                   {editingPaymentId === p.id ? (
                     <div class="non-printable">
@@ -1963,6 +1992,7 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate,
                       <div>
                         <div class="font-semibold">{formatInr(p.amountPaise)} · {PAYMENT_METHOD_LABELS[p.paymentMethod as PaymentMethod] || p.paymentMethod}</div>
                         <div class="text-xs text-ink-light">{new Date(p.receivedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</div>
+                        <div class="text-xs text-ink-light">Paid so far {formatInr((sale.payments ?? []).slice(0, i + 1).reduce((sum, x) => sum + x.amountPaise, 0))}</div>
                       </div>
                       {sale.status === 'completed' && (
                         <button class="btn btn-ghost btn-sm non-printable" onClick={() => { setEditingPaymentId(p.id); setEditingPaymentMethod(p.paymentMethod as PaymentMethod); setPaymentCorrectionError(null); }} type="button">
@@ -2157,6 +2187,7 @@ export function App() {
   const [saleDetailsBackRoute, setSaleDetailsBackRoute] = useState<'home' | 'sales'>('home');
   const [salesViewState, setSalesViewState] = useState<SalesViewState>(EMPTY_SALES_VIEW_STATE);
   const [activeSaleIdempotencyKey, setActiveSaleIdempotencyKey] = useState<string>(() => crypto.randomUUID());
+  const [redeemPlan, setRedeemPlan] = useState<PlanDTO | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -2208,6 +2239,8 @@ export function App() {
     if (newRoute === 'view-sale' && route !== 'view-sale' && route !== 'cancel-sale-confirm') {
       setSaleDetailsBackRoute(route === 'sales' ? 'sales' : 'home');
     }
+    // A plan redemption lives only within the sell → review flow; leaving it must not leak into a later sale.
+    if (newRoute !== 'sell' && newRoute !== 'review-sale') setRedeemPlan(null);
     setRoute(newRoute as Route);
     if (newRoute === 'products' && productId !== undefined) {
       setSelectedProductId(productId);
@@ -2263,7 +2296,7 @@ export function App() {
       case 'home':
         return <DashboardScreen state={state} onNavigate={handleNavigate} />;
       case 'sell':
-        return <SellScreen state={state} onSaleDraftChange={handleSaleDraftChange} onNavigate={handleNavigate} onNeedsSetup={openNeedsSetup} />;
+        return <SellScreen state={state} onSaleDraftChange={handleSaleDraftChange} onNavigate={handleNavigate} onNeedsSetup={openNeedsSetup} redeemPlan={redeemPlan} />;
       case 'sales':
         return <SalesHistoryScreen state={state} onStateChange={setState} onNavigate={handleNavigate} setLastCompletedSaleId={setLastCompletedSaleId} viewState={salesViewState} onViewStateChange={setSalesViewState} />;
       case 'review-sale':
@@ -2275,8 +2308,12 @@ export function App() {
             onStateChange={setState}
             onNavigate={handleNavigate}
             setLastCompletedSaleId={setLastCompletedSaleId}
+            redeemPlan={redeemPlan}
+            onPlanRedeemed={() => setRedeemPlan(null)}
           />
         );
+      case 'plans':
+        return <PlansScreen onRedeem={(plan) => { handleSaleDraftChange(setSaleIsGift(state.saleDraft, false)); setRedeemPlan(plan); handleNavigate('sell'); }} onOpenSale={(id) => void openReportSale(id)} />;
       case 'sale-completed':
         return <SaleCompletedScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onNavigate={handleNavigate} />;
       case 'stock':
