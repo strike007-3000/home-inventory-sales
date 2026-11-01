@@ -133,6 +133,11 @@ export interface CreateSaleRequest {
   readonly receivedPaise: number;
   /** Redeem an open savings plan: its deposits become this sale's payments (receivedPaise must be 0). */
   readonly planId?: number;
+  /** Stock borrowed from another seller to fulfil this sale; recorded on that seller's ledger. */
+  readonly sourcing?: {
+    readonly sellerId: number;
+    readonly items: readonly { readonly productId: number; readonly quantity: number; readonly unitValuePaise: number }[];
+  };
 }
 
 export interface PaymentDTO {
@@ -302,4 +307,57 @@ export interface PlanDepositRequest {
   readonly paymentMethod: string;
   /** YYYY-MM-DD; defaults to now. */
   readonly receivedDate?: string;
+}
+
+// ============================================================================
+// Seller ledger
+// ============================================================================
+
+export interface SellerSummaryDTO {
+  readonly id: number;
+  readonly name: string;
+  /** Positive: the seller owes us. Negative: we owe the seller. */
+  readonly balancePaise: number;
+}
+
+export type SellerLedgerEntryDTO =
+  | {
+    readonly type: 'transfer';
+    readonly id: number;
+    readonly direction: 'in' | 'out';
+    readonly occurredAt: string;
+    readonly note: string | null;
+    readonly saleId: number | null;
+    readonly valuePaise: number;
+    readonly items: readonly { readonly productName: string; readonly quantity: number; readonly unitValuePaise: number }[];
+  }
+  | {
+    readonly type: 'payment';
+    readonly id: number;
+    readonly direction: 'paid' | 'received';
+    readonly occurredAt: string;
+    readonly amountPaise: number;
+    readonly paymentMethod: string;
+  };
+
+export interface SellerDTO extends SellerSummaryDTO {
+  readonly entries: readonly SellerLedgerEntryDTO[];
+}
+
+export interface CreateSellerRequest {
+  readonly name: string;
+}
+
+export interface SellerTransferRequest {
+  /** 'in': the seller gave us stock. 'out': we gave the seller stock. */
+  readonly direction: 'in' | 'out';
+  readonly items: readonly { readonly productId: number; readonly quantity: number; readonly unitValuePaise: number }[];
+  readonly note?: string;
+}
+
+export interface SellerPaymentRequest {
+  /** 'paid': we paid the seller. 'received': the seller paid us. */
+  readonly direction: 'paid' | 'received';
+  readonly amountPaise: number;
+  readonly paymentMethod: string;
 }

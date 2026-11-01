@@ -230,6 +230,25 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     }
   }
 
+  const sourced = new Map<number, { quantity: number; unitValuePaise: number }>();
+  if (body.sourcing !== undefined) {
+    const { sellerId, items } = body.sourcing;
+    if (!Number.isSafeInteger(sellerId) || sellerId <= 0 || !Array.isArray(items) || items.length === 0) {
+      return errorResponse('Sourcing needs a seller and at least one product', 400, 'sourcing');
+    }
+    for (const item of items) {
+      const line = body.lines.find((l) => l.productId === item.productId);
+      if (!line || sourced.has(item.productId) || !Number.isSafeInteger(item.quantity) || item.quantity <= 0 || item.quantity > line.quantity
+        || !isNonNegativeMoney(item.unitValuePaise)) {
+        return errorResponse('Invalid sourced product, quantity or value', 400, 'sourcing');
+      }
+      sourced.set(item.productId, { quantity: item.quantity, unitValuePaise: item.unitValuePaise });
+    }
+    if (!await env.DB.prepare('SELECT 1 FROM sellers WHERE id = ?').bind(sellerId).first()) {
+      return errorResponse('Seller not found', 404, 'sourcing');
+    }
+  }
+
   const ids = [...seen];
   const placeholders = ids.map(() => '?').join(',');
   const rows = await env.DB.prepare(
@@ -238,16 +257,17 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
   ).bind(...ids).all<ProductRow>();
   const products = new Map(rows.results.map((row) => [row.id, row]));
 
-  const computedLines = new Map<number, { lineTotal: number; unitPrice: number; setPrice: number | null; setStockAfter: number }>();
+  const computedLines = new Map<number, { lineTotal: number; unitPrice: number; setPrice: number | null; setStockBefore: number; setStockAfter: number }>();
   let subtotal = 0;
   for (const line of body.lines) {
     const product = products.get(line.productId);
     if (!product || !product.active) return errorResponse(`Product ${line.productId} is not available`, 404, 'productId');
-    if (line.quantity > product.stock_quantity) return errorResponse(`Not enough stock for ${product.name}`, 409, 'quantity');
+    if (line.quantity > product.stock_quantity + (sourced.get(line.productId)?.quantity ?? 0)) return errorResponse(`Not enough stock for ${product.name}`, 409, 'quantity');
     let lineTotal: number;
     let unitPrice: number;
     let setPrice: number | null = null;
     let setStockAfter: number;
+    let setStockBefore = product.set_stock_quantity;
     if (product.units_per_set) {
       let setP = line.setPricePaise;
       if (setP === undefined && isNonNegativeMoney(line.unitPricePaise)) {
@@ -268,7 +288,9 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
       lineTotal = Number(rounded);
       unitPrice = Math.floor((setP + Math.floor(product.units_per_set / 2)) / product.units_per_set);
       setPrice = setP;
-      const nextSetStock = product.set_stock_quantity - line.quantity / product.units_per_set;
+      // Sourced pieces count as stock received just before the sale, so a cancellation restores them too.
+      setStockBefore = product.set_stock_quantity + (sourced.get(line.productId)?.quantity ?? 0) / product.units_per_set;
+      const nextSetStock = setStockBefore - line.quantity / product.units_per_set;
       setStockAfter = nextSetStock <= 1e-9 ? 0 : Number(nextSetStock.toFixed(12));
     } else {
       const unitP = isGift ? (line.unitPricePaise ?? 0) : line.unitPricePaise;
@@ -282,7 +304,7 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) {
       return errorResponse('Sale total exceeds the safe integer range', 400, 'lines');
     }
-    computedLines.set(line.productId, { lineTotal, unitPrice, setPrice, setStockAfter });
+    computedLines.set(line.productId, { lineTotal, unitPrice, setPrice, setStockBefore, setStockAfter });
     subtotal += lineTotal;
   }
 
@@ -342,23 +364,40 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     ).bind(key, refundPaise, now, body.planId, key));
   }
 
+  if (body.sourcing !== undefined) {
+    batch.push(env.DB.prepare(
+      `INSERT INTO seller_transfers (seller_id, direction, note, sale_id, occurred_at)
+       SELECT ?, 'in', ?, id, ? FROM sales WHERE idempotency_key = ?`,
+    ).bind(body.sourcing.sellerId, `Borrowed for ${saleNumber}`, now, key));
+    for (const [productId, item] of sourced) {
+      batch.push(env.DB.prepare(
+        `INSERT INTO seller_transfer_items (transfer_id, product_id, quantity, unit_value_minor)
+         SELECT t.id, ?, ?, ? FROM seller_transfers t JOIN sales s ON s.id = t.sale_id WHERE s.idempotency_key = ?`,
+      ).bind(productId, item.quantity, item.unitValuePaise, key));
+      batch.push(env.DB.prepare(
+        `INSERT INTO stock_movements (product_id, quantity_delta, set_stock_delta, reason, sale_id, note, created_at)
+         SELECT ?, ?, ?, 'delivery', id, 'Borrowed from seller for sale', ? FROM sales WHERE idempotency_key = ?`,
+      ).bind(productId, item.quantity, products.get(productId)!.units_per_set ? item.quantity / products.get(productId)!.units_per_set! : 0, now, key));
+    }
+  }
+
   for (const line of body.lines) {
     const product = products.get(line.productId)!;
     const computed = computedLines.get(line.productId)!;
     batch.push(env.DB.prepare(
       `UPDATE products SET stock_quantity = stock_quantity - ?, set_stock_quantity = ?, updated_at = ?, version = version + 1
        WHERE id = ? AND version = ? AND EXISTS (SELECT 1 FROM sales WHERE idempotency_key = ?)`,
-    ).bind(line.quantity, computed.setStockAfter, now, line.productId, product.version, key));
+    ).bind(line.quantity - (sourced.get(line.productId)?.quantity ?? 0), computed.setStockAfter, now, line.productId, product.version, key));
     batch.push(env.DB.prepare(
       `INSERT INTO sale_items (sale_id, product_id, product_name_snapshot, unit_price_minor, quantity, line_total_minor,
          set_stock_before, set_stock_after, units_per_set_snapshot, set_price_minor_snapshot)
        SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM sales WHERE idempotency_key = ?`,
     ).bind(line.productId, product.name, computed.unitPrice, line.quantity, computed.lineTotal,
-      product.set_stock_quantity, computed.setStockAfter, product.units_per_set, computed.setPrice, key));
+      computed.setStockBefore, computed.setStockAfter, product.units_per_set, computed.setPrice, key));
     batch.push(env.DB.prepare(
       `INSERT INTO stock_movements (product_id, quantity_delta, set_stock_delta, reason, sale_id, note, created_at)
        SELECT ?, ?, ?, 'sale', id, ?, ? FROM sales WHERE idempotency_key = ?`,
-    ).bind(line.productId, -line.quantity, computed.setStockAfter - product.set_stock_quantity,
+    ).bind(line.productId, -line.quantity, computed.setStockAfter - computed.setStockBefore,
       `Sold ${line.quantity} unit${line.quantity === 1 ? '' : 's'}`, now, key));
   }
 

@@ -4,7 +4,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'preact/hooks';
 import { Fragment, type JSX } from 'preact';
 import { apiGetJson, apiPostJson, apiPutJson } from './api';
-import type { CreateSaleRequest, LidReferenceDTO, PlanDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, UpdateSaleRequest } from '../shared/contracts';
+import type { CreateSaleRequest, LidReferenceDTO, PlanDTO, RecordPaymentRequest, SaleDTO, SaleSummaryDTO, SellerSummaryDTO, UpdateSaleRequest } from '../shared/contracts';
 import {
   InventoryState,
   ProductId,
@@ -45,6 +45,7 @@ import {
   StockIcon,
   ReportsIcon,
   PlansIcon,
+  SellersIcon,
   ProductsIcon,
   SearchIcon,
   CheckIcon,
@@ -66,6 +67,7 @@ import { ReportsScreen } from './screens/reports';
 import { ProductList } from './components/ProductList';
 import { LidLookup } from './components/LidLookup';
 import { PlansScreen } from './screens/plans';
+import { SellersScreen } from './screens/sellers';
 
 // Route type
 type Route =
@@ -83,7 +85,8 @@ type Route =
   | 'products'
   | 'lids'
   | 'reports'
-  | 'plans';
+  | 'plans'
+  | 'sellers';
 
 type InventoryStateSetter = (
   value: InventoryState | ((previous: InventoryState) => InventoryState),
@@ -112,14 +115,13 @@ function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
     { route: 'home', label: 'Home', Icon: HomeIcon },
     { route: 'sales', label: 'Sales', Icon: SellIcon },
     { route: 'products', label: 'Products', Icon: ProductsIcon },
-    { route: 'lids', label: 'LIDS', Icon: SearchIcon },
-    { route: 'stock', label: 'Stock', Icon: StockIcon },
+    { route: 'stock', label: 'Inventory', Icon: StockIcon },
     { route: 'plans', label: 'Plans', Icon: PlansIcon },
-    { route: 'reports', label: 'Reports', Icon: ReportsIcon },
+    { route: 'sellers', label: 'Sellers', Icon: SellersIcon },
   ];
   const activeRoute: Route = ['sell', 'review-sale', 'sale-completed', 'view-sale', 'cancel-sale-confirm'].includes(currentRoute)
     ? 'sales'
-    : ['stock-arrived', 'count-stock', 'fix-stock'].includes(currentRoute)
+    : ['stock-arrived', 'count-stock', 'fix-stock', 'lids', 'reports'].includes(currentRoute)
       ? 'stock'
       : currentRoute;
 
@@ -161,6 +163,8 @@ interface ProductCardProps {
   quantityInDraft: number;
   quantityLabel: string;
   maxQuantity?: number;
+  /** Let the quantity exceed stock; the shortfall is sourced from another seller at review. */
+  allowShortfall?: boolean;
   onQuantityChange: (quantity: number) => void;
   showAfterQuantity?: number;
   onNeedsSetup?: (productId: ProductId) => void;
@@ -171,13 +175,15 @@ function ProductCard({
   quantityInDraft,
   quantityLabel,
   maxQuantity,
+  allowShortfall,
   onQuantityChange,
   showAfterQuantity,
   onNeedsSetup,
 }: ProductCardProps) {
   const isOutOfStock = product.quantity === 0;
   const isSaleQuantity = maxQuantity !== undefined;
-  const isAtMax = maxQuantity !== undefined && quantityInDraft >= maxQuantity;
+  const isAtMax = !allowShortfall && maxQuantity !== undefined && quantityInDraft >= maxQuantity;
+  const shortfall = allowShortfall ? Math.max(0, quantityInDraft - product.quantity) : 0;
 
   const handleDecrease = () => {
     if (quantityInDraft > 0) {
@@ -186,7 +192,7 @@ function ProductCard({
   };
 
   const handleIncrease = () => {
-    if ((!isSaleQuantity || !isOutOfStock) && !isAtMax) {
+    if ((!isSaleQuantity || !isOutOfStock || allowShortfall) && !isAtMax) {
       onQuantityChange(quantityInDraft + 1);
     }
   };
@@ -214,7 +220,7 @@ function ProductCard({
           </button>
           <span class="quantity-value">{value}</span>
           <button class="quantity-btn" onClick={() => onQuantityChange(increaseTo)}
-            disabled={(isSaleQuantity && isOutOfStock) || (maxQuantity !== undefined && increaseTo > maxQuantity)}
+            disabled={!allowShortfall && ((isSaleQuantity && isOutOfStock) || (maxQuantity !== undefined && increaseTo > maxQuantity))}
             type="button" aria-label={`Increase ${product.name} ${label.toLowerCase()}`}>
             <PlusIcon />
           </button>
@@ -272,7 +278,7 @@ function ProductCard({
               type="button" aria-label={`Decrease ${product.name} quantity`}><MinusIcon /></button>
             <span class="quantity-value">{quantityInDraft}</span>
             <button class="quantity-btn" onClick={handleIncrease}
-              disabled={(isSaleQuantity && isOutOfStock) || isAtMax}
+              disabled={(!allowShortfall && isSaleQuantity && isOutOfStock) || isAtMax}
               type="button" aria-label={`Increase ${product.name} quantity`}><PlusIcon /></button>
           </div>
         </>
@@ -280,6 +286,9 @@ function ProductCard({
 
       {isAtMax && !isOutOfStock && (
         <div class="quantity-hint">Only {maxQuantity} available</div>
+      )}
+      {shortfall > 0 && (
+        <div class="quantity-hint">{shortfall} more than in stock — pick the seller you borrow it from at review</div>
       )}
 
       {showAfterQuantity !== undefined && quantityInDraft > 0 && (
@@ -510,7 +519,7 @@ function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup, redeem
   }, [state.products, searchQuery]);
 
   const cartItemCount = state.saleDraft.lines.reduce((sum, line) => sum + line.quantity, 0);
-  const subtotalResult = calculateSaleSubtotal(state.saleDraft, state.products);
+  const subtotalResult = calculateSaleSubtotal(state.saleDraft, state.products, true);
 
   const handleQuantityChange = (productId: ProductId, quantity: number) => {
     const newDraft = setSaleLineQuantity(state.saleDraft, productId, quantity);
@@ -597,6 +606,7 @@ function SellScreen({ state, onSaleDraftChange, onNavigate, onNeedsSetup, redeem
               quantityInDraft={getSaleLineQuantity(state.saleDraft, product.id)}
               quantityLabel="Quantity to sell"
               maxQuantity={product.quantity}
+              allowShortfall
               onQuantityChange={(q) => handleQuantityChange(product.id, q)}
               onNeedsSetup={onNeedsSetup}
             />
@@ -655,6 +665,9 @@ function ReviewSaleScreen({
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [customerName, setCustomerName] = useState(redeemPlan?.customerName ?? '');
   const [receivedPaise, setReceivedPaise] = useState<number | null>(null);
+  const [sellers, setSellers] = useState<readonly SellerSummaryDTO[]>([]);
+  const [sourceSellerId, setSourceSellerId] = useState('');
+  const [sourceCosts, setSourceCosts] = useState<Record<number, string>>({});
   const [saleDate, setSaleDate] = useState(() => {
     const now = new Date();
     const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
@@ -662,6 +675,10 @@ function ReviewSaleScreen({
   });
 
   const { saleDraft, products } = state;
+
+  useEffect(() => {
+    apiGetJson<{ items: SellerSummaryDTO[] }>('/sellers').then((r) => setSellers(r.items)).catch(() => undefined);
+  }, []);
 
   // Prevent an empty sale draft from opening a stranded Review screen
   useEffect(() => {
@@ -675,7 +692,7 @@ function ReviewSaleScreen({
   }
 
   // Calculate subtotal
-  const subtotalResult = calculateSaleSubtotal(saleDraft, products);
+  const subtotalResult = calculateSaleSubtotal(saleDraft, products, true);
   const subtotalPaise = subtotalResult.ok ? subtotalResult.value : 0;
   const totalPaise = Math.max(0, subtotalPaise - saleDraft.discountPaise);
   const effectiveReceivedPaise = redeemPlan ? 0 : receivedPaise ?? totalPaise;
@@ -732,9 +749,17 @@ function ReviewSaleScreen({
     onNavigate('sell');
   };
 
+  // Anything sold beyond current stock must be borrowed from another seller.
+  const shortfalls = lineItems.filter((item) => item.quantity > item.product.quantity);
+  const costOf = (productId: number) => Math.round((parseFloat(sourceCosts[productId] ?? '') || 0) * 100);
+
   const handleCompleteSale = async () => {
     if (blockingError) {
       setError(blockingError);
+      return;
+    }
+    if (shortfalls.length > 0 && (!sourceSellerId || shortfalls.some((item) => sourceCosts[item.product.id] === undefined || sourceCosts[item.product.id] === ''))) {
+      setError('Choose the seller you are borrowing the missing stock from, and enter what each costs.');
       return;
     }
     setError(null);
@@ -753,6 +778,12 @@ function ReviewSaleScreen({
         paymentMethod: saleDraft.isGift ? 'other' : saleDraft.paymentMethod,
         receivedPaise: saleDraft.isGift ? 0 : effectiveReceivedPaise,
         ...(redeemPlan ? { planId: redeemPlan.id } : {}),
+        ...(shortfalls.length > 0 ? {
+          sourcing: {
+            sellerId: Number(sourceSellerId),
+            items: shortfalls.map((item) => ({ productId: item.product.id, quantity: item.quantity - item.product.quantity, unitValuePaise: costOf(item.product.id) })),
+          },
+        } : {}),
       };
       const sale = await apiPostJson<SaleDTO>('/sales', request);
       const record = { ...sale, paymentMethod: sale.paymentMethod as PaymentMethod };
@@ -908,7 +939,7 @@ function ReviewSaleScreen({
                 </div>
               </div>
               {product.unitsPerSet ? (
-                <div class="stock-delta">After sale: {product.quantity - quantity} pieces · {setStockAfter} sets</div>
+                <div class="stock-delta">After sale: {Math.max(0, product.quantity - quantity)} pieces · {setStockAfter} sets</div>
               ) : (
                 <div class="form-group">
                   <label class="form-label" for={`set-stock-${product.id}`}>Stock/set count after sale</label>
@@ -922,6 +953,31 @@ function ReviewSaleScreen({
             </div>
           );
         })}
+
+        {shortfalls.length > 0 && (
+          <div class="card mt-4">
+            <h2 class="text-md font-semibold mb-2">Borrow missing stock from a seller</h2>
+            <div class="text-sm text-ink-light mb-3">This is added to that seller's ledger, so you can settle it later with stock or money.</div>
+            <div class="form-group">
+              <label class="form-label" for="source-seller">Seller</label>
+              <select id="source-seller" class="form-input" value={sourceSellerId} onChange={(e) => setSourceSellerId((e.target as HTMLSelectElement).value)}>
+                <option value="">Choose…</option>
+                {sellers.map((seller) => <option key={seller.id} value={seller.id}>{seller.name}</option>)}
+              </select>
+              {sellers.length === 0 && <div class="text-sm text-ink-light mt-1">No sellers yet. Add one in the Sellers tab first.</div>}
+            </div>
+            {shortfalls.map((item) => (
+              <div key={item.product.id} class="form-group">
+                <label class="form-label" for={`source-cost-${item.product.id}`}>
+                  {item.product.name}: borrowing {item.quantity - item.product.quantity}, cost each (₹)
+                </label>
+                <input id={`source-cost-${item.product.id}`} type="number" class="form-input" min={0} step="0.01" inputMode="decimal"
+                  value={sourceCosts[item.product.id] ?? ''}
+                  onInput={(e) => setSourceCosts({ ...sourceCosts, [item.product.id]: (e.target as HTMLInputElement).value })} />
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Totals */}
         <div class="card mt-4">
@@ -1107,12 +1163,14 @@ function StockChooserScreen({ onNavigate }: StockChooserScreenProps) {
     { route: 'stock-arrived' as Route, icon: PackageIcon, title: 'Stock arrived', description: 'Add quantities you received' },
     { route: 'count-stock' as Route, icon: ClipboardIcon, title: 'Count stock', description: 'Enter what you physically have' },
     { route: 'fix-stock' as Route, icon: WrenchIcon, title: 'Fix stock quantity', description: 'Damage, loss, samples, errors' },
+    { route: 'lids' as Route, icon: SearchIcon, title: 'LIDS', description: 'Look up the LIDS catalogue' },
+    { route: 'reports' as Route, icon: ReportsIcon, title: 'Reports', description: 'Sales, products, outstanding and exports' },
   ];
 
   return (
     <div class="screen">
       <div class="main no-sticky-action">
-        <h1 class="text-2xl font-semibold mb-4">Stock</h1>
+        <h1 class="text-2xl font-semibold mb-4">Inventory</h1>
         {actions.map(({ route, icon: Icon, title, description }) => (
           <button
             key={route}
@@ -2314,6 +2372,8 @@ export function App() {
         );
       case 'plans':
         return <PlansScreen onRedeem={(plan) => { handleSaleDraftChange(setSaleIsGift(state.saleDraft, false)); setRedeemPlan(plan); handleNavigate('sell'); }} onOpenSale={(id) => void openReportSale(id)} />;
+      case 'sellers':
+        return <SellersScreen />;
       case 'sale-completed':
         return <SaleCompletedScreen state={state} lastCompletedSaleId={lastCompletedSaleId} onNavigate={handleNavigate} />;
       case 'stock':

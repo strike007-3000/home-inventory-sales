@@ -241,3 +241,11 @@ export function PlansIcon() {
     </svg>
   );
 }
+
+export function SellersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 7h13l-3-3M17 17H4l3 3" />
+    </svg>
+  );
+}

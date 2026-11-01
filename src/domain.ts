@@ -305,7 +305,8 @@ export function validateQuantity(n: number, fieldName: string): Result<void> {
  */
 export function calculateSaleSubtotal(
   draft: SaleDraft,
-  products: ReadonlyMap<ProductId, Product>
+  products: ReadonlyMap<ProductId, Product>,
+  allowShortfall = false, // shortfall is sourced from another seller at review
 ): Result<number> {
   let subtotal = 0;
 
@@ -323,7 +324,7 @@ export function calculateSaleSubtotal(
     if (!product.active) {
       return Err(`${product.name} is not available`);
     }
-    if (line.quantity > product.quantity) {
+    if (!allowShortfall && line.quantity > product.quantity) {
       return Err(`Only ${product.quantity} ${product.name} available, but ${line.quantity} requested`);
     }
     const price = line.unitPricePaise ?? product.pricePaise;
