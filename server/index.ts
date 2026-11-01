@@ -28,6 +28,7 @@ import {
 import { handleStockDelivery, handleStockCount, handleStockAdjustment, handleStockChange } from './stock';
 import { handleImportPreview, handleImportCommit } from './import';
 import { handleCancelSale, handleCreateSale, handleGetSale, handleListSales, handleRecordPayment, handleUpdatePaymentMethod, handleUpdateSale } from './sales';
+import { handleCreateSeller, handleGetSeller, handleListSellers, handleSellerPayment, handleSellerTransfer } from './sellers';
 import { handleAddDeposit, handleCancelPlan, handleCreatePlan, handleGetPlan, handleListPlans } from './plans';
 import { handleListLids } from './lids';
 import { handleReports } from './reports';
@@ -190,6 +191,18 @@ async function routeApi(
   }
   if (saleMatch && saleMatch[2] === '/payments' && method === 'POST') {
     return handleRecordPayment(saleId!, request, env);
+  }
+
+  // Seller ledger
+  if (path === '/sellers' && method === 'GET') return handleListSellers(env);
+  if (path === '/sellers' && method === 'POST') return handleCreateSeller(request, env);
+  const sellerMatch = path.match(/^\/sellers\/(\d+)(\/(transfers|payments))?$/);
+  if (sellerMatch) {
+    const sellerId = Number(sellerMatch[1]);
+    if (!Number.isSafeInteger(sellerId) || sellerId <= 0) return errorResponse('Invalid seller ID', 400);
+    if (!sellerMatch[2] && method === 'GET') return handleGetSeller(sellerId, env);
+    if (sellerMatch[3] === 'transfers' && method === 'POST') return handleSellerTransfer(sellerId, request, env);
+    if (sellerMatch[3] === 'payments' && method === 'POST') return handleSellerPayment(sellerId, request, env);
   }
 
   // Savings plans
