@@ -257,7 +257,7 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
   ).bind(...ids).all<ProductRow>();
   const products = new Map(rows.results.map((row) => [row.id, row]));
 
-  const computedLines = new Map<number, { lineTotal: number; unitPrice: number; setPrice: number | null; setStockAfter: number }>();
+  const computedLines = new Map<number, { lineTotal: number; unitPrice: number; setPrice: number | null; setStockBefore: number; setStockAfter: number }>();
   let subtotal = 0;
   for (const line of body.lines) {
     const product = products.get(line.productId);
@@ -267,6 +267,7 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     let unitPrice: number;
     let setPrice: number | null = null;
     let setStockAfter: number;
+    let setStockBefore = product.set_stock_quantity;
     if (product.units_per_set) {
       let setP = line.setPricePaise;
       if (setP === undefined && isNonNegativeMoney(line.unitPricePaise)) {
@@ -287,7 +288,9 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
       lineTotal = Number(rounded);
       unitPrice = Math.floor((setP + Math.floor(product.units_per_set / 2)) / product.units_per_set);
       setPrice = setP;
-      const nextSetStock = product.set_stock_quantity - line.quantity / product.units_per_set;
+      // Sourced pieces count as stock received just before the sale, so a cancellation restores them too.
+      setStockBefore = product.set_stock_quantity + (sourced.get(line.productId)?.quantity ?? 0) / product.units_per_set;
+      const nextSetStock = setStockBefore - line.quantity / product.units_per_set;
       setStockAfter = nextSetStock <= 1e-9 ? 0 : Number(nextSetStock.toFixed(12));
     } else {
       const unitP = isGift ? (line.unitPricePaise ?? 0) : line.unitPricePaise;
@@ -301,7 +304,7 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
     if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) {
       return errorResponse('Sale total exceeds the safe integer range', 400, 'lines');
     }
-    computedLines.set(line.productId, { lineTotal, unitPrice, setPrice, setStockAfter });
+    computedLines.set(line.productId, { lineTotal, unitPrice, setPrice, setStockBefore, setStockAfter });
     subtotal += lineTotal;
   }
 
@@ -372,9 +375,9 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
          SELECT t.id, ?, ?, ? FROM seller_transfers t JOIN sales s ON s.id = t.sale_id WHERE s.idempotency_key = ?`,
       ).bind(productId, item.quantity, item.unitValuePaise, key));
       batch.push(env.DB.prepare(
-        `INSERT INTO stock_movements (product_id, quantity_delta, reason, sale_id, note, created_at)
-         SELECT ?, ?, 'delivery', id, 'Borrowed from seller for sale', ? FROM sales WHERE idempotency_key = ?`,
-      ).bind(productId, item.quantity, now, key));
+        `INSERT INTO stock_movements (product_id, quantity_delta, set_stock_delta, reason, sale_id, note, created_at)
+         SELECT ?, ?, ?, 'delivery', id, 'Borrowed from seller for sale', ? FROM sales WHERE idempotency_key = ?`,
+      ).bind(productId, item.quantity, products.get(productId)!.units_per_set ? item.quantity / products.get(productId)!.units_per_set! : 0, now, key));
     }
   }
 
@@ -390,11 +393,11 @@ export async function handleCreateSale(request: Request, env: Env): Promise<Resp
          set_stock_before, set_stock_after, units_per_set_snapshot, set_price_minor_snapshot)
        SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM sales WHERE idempotency_key = ?`,
     ).bind(line.productId, product.name, computed.unitPrice, line.quantity, computed.lineTotal,
-      product.set_stock_quantity, computed.setStockAfter, product.units_per_set, computed.setPrice, key));
+      computed.setStockBefore, computed.setStockAfter, product.units_per_set, computed.setPrice, key));
     batch.push(env.DB.prepare(
       `INSERT INTO stock_movements (product_id, quantity_delta, set_stock_delta, reason, sale_id, note, created_at)
        SELECT ?, ?, ?, 'sale', id, ?, ? FROM sales WHERE idempotency_key = ?`,
-    ).bind(line.productId, -line.quantity, computed.setStockAfter - product.set_stock_quantity,
+    ).bind(line.productId, -line.quantity, computed.setStockAfter - computed.setStockBefore,
       `Sold ${line.quantity} unit${line.quantity === 1 ? '' : 's'}`, now, key));
   }
 

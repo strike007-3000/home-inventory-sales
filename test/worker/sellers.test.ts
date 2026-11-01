@@ -116,4 +116,19 @@ describe('Seller ledger', () => {
     expect(detail.balancePaise).toBe(-30000);
     expect(detail.entries[0]!.saleId).not.toBeNull();
   });
+
+  it('cancelling a sourced sale restores the borrowed set stock', async () => {
+    const seller = await newSeller(`Sets ${++productNumber}`);
+    const p = await addProduct(2, 0.5, 4); // 2 pieces, 0.5 set, 4 pieces per set
+    const res = await api('/api/sales', 'POST', {
+      idempotencyKey: 'sets-sourced', saleDate: '2026-12-01', discountPaise: 0, paymentMethod: 'cash', receivedPaise: 0,
+      lines: [{ productId: p, quantity: 5, setPricePaise: 15000 }],
+      sourcing: { sellerId: seller, items: [{ productId: p, quantity: 3, unitValuePaise: 3000 }] },
+    });
+    expect(res.status).toBe(201);
+    const { id } = await res.json() as { id: number };
+    expect((await api(`/api/sales/${id}/cancel`, 'POST', { reason: 'test' })).status).toBe(200);
+    const row = await env.DB.prepare('SELECT stock_quantity AS q, set_stock_quantity AS s FROM products WHERE id = ?').bind(p).first<{ q: number; s: number }>();
+    expect(row).toEqual({ q: 5, s: 1.25 });
+  });
 });

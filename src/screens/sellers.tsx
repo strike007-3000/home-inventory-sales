@@ -84,6 +84,7 @@ function TransferForm({ sellerId, direction, onDone, onCancel }: {
     apiGetJson<{ items: ProductDTO[] }>('/products?active=active&limit=1000').then((r) => setProducts(r.items)).catch((e) => setError(errText(e, 'Products could not be loaded')));
   }, []);
 
+  const hasNew = lines.some((l) => l.productId === NEW_PRODUCT);
   const update = (i: number, patch: Partial<Line>) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pick = (i: number, productId: string) => {
     const product = products.find((p) => String(p.id) === productId);
@@ -96,11 +97,15 @@ function TransferForm({ sellerId, direction, onDone, onCancel }: {
     try {
       // A product we have never stocked is created empty first; the transfer then brings the stock in.
       const items: SellerTransferRequest['items'][number][] = [];
-      for (const l of lines) {
+      for (const [i, l] of lines.entries()) {
         let productId = Number(l.productId);
         if (l.productId === NEW_PRODUCT) {
-          const created: CreateProductRequest = { sku: null, name: newName, category: null, pricePaise: toPaise(l.value), lowStockLevel: 0, quantity: 0, active: true };
-          productId = (await apiPostJson<ProductDTO>('/products', created)).id;
+          const request: CreateProductRequest = { sku: null, name: newName, category: null, pricePaise: toPaise(l.value), lowStockLevel: 0, quantity: 0, active: true };
+          const created = await apiPostJson<ProductDTO>('/products', request);
+          productId = created.id;
+          // Keep the created product selected so a failed transfer retried doesn't create it twice.
+          setProducts((previous) => [...previous, created]);
+          setLines((previous) => previous.map((line, j) => (j === i ? { ...line, productId: String(created.id) } : line)));
         }
         items.push({ productId, quantity: Number(l.quantity), unitValuePaise: toPaise(l.value) });
       }
@@ -112,7 +117,6 @@ function TransferForm({ sellerId, direction, onDone, onCancel }: {
     }
   };
 
-  const hasNew = lines.some((l) => l.productId === NEW_PRODUCT);
   return (
     <div class="card mb-4">
       <h2 class="text-md font-semibold mb-3">{direction === 'in' ? 'Stock received from seller' : 'Stock given to seller'}</h2>
@@ -121,7 +125,7 @@ function TransferForm({ sellerId, direction, onDone, onCancel }: {
           <label class="form-label" for={`line-product-${i}`}>Product</label>
           <select id={`line-product-${i}`} class="form-input mb-2" value={l.productId} onChange={(e) => pick(i, (e.target as HTMLSelectElement).value)}>
             <option value="">Choose…</option>
-            {direction === 'in' && <option value={NEW_PRODUCT}>+ New product (not in my stock)</option>}
+            {direction === 'in' && (l.productId === NEW_PRODUCT || !hasNew) && <option value={NEW_PRODUCT}>+ New product (not in my stock)</option>}
             {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.quantity} in stock)</option>)}
           </select>
           <div class="flex gap-2">
