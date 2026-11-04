@@ -331,6 +331,18 @@ async function handleExportCsv(_type: string, _env: Env): Promise<Response> {
   return errorResponse('Not implemented yet', 501);
 }
 
-async function handleExportAll(_env: Env): Promise<Response> {
-  return errorResponse('Not implemented yet', 501);
+// Business tables only: login_attempts and import_staging are operational, not data worth backing up.
+const BACKUP_TABLES = [
+  'locations', 'products', 'lid_references', 'sales', 'sale_items', 'sale_payments', 'sale_payment_corrections',
+  'sale_cancellations', 'stock_entries', 'stock_entry_items', 'stock_movements', 'product_consolidation_audit',
+  'plans', 'plan_deposits', 'sellers', 'seller_transfers', 'seller_transfer_items', 'seller_payments',
+];
+
+async function handleExportAll(env: Env): Promise<Response> {
+  const results = await env.DB.batch(BACKUP_TABLES.map((t) => env.DB.prepare(`SELECT * FROM ${t}`)));
+  const tables = Object.fromEntries(BACKUP_TABLES.map((t, i) => [t, results[i]?.results ?? []]));
+  // Column names travel with the data so empty tables still export a header row.
+  const info = await env.DB.batch(BACKUP_TABLES.map((t) => env.DB.prepare(`SELECT name FROM pragma_table_info('${t}')`)));
+  const columns = Object.fromEntries(BACKUP_TABLES.map((t, i) => [t, (info[i]?.results ?? []).map((r) => (r as { name: string }).name)]));
+  return jsonResponse({ exportedAt: new Date().toISOString(), tables, columns });
 }

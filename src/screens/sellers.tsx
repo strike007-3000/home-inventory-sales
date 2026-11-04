@@ -70,6 +70,57 @@ export function SellersScreen() {
 type Line = { productId: string; quantity: string; value: string };
 const NEW_PRODUCT = 'new';
 
+// Type-to-search product picker (same suggest list as product creation); a long <select> is unusable with a big catalogue.
+function ProductPicker({ id, products, productId, canAddNew, onPick }: {
+  id: string; products: readonly ProductDTO[]; productId: string; canAddNew: boolean; onPick: (productId: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const selected = productId === NEW_PRODUCT ? 'New product' : (products.find((p) => String(p.id) === productId)?.name ?? '');
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const all = products.filter((p) => words.every((w) => p.name.toLowerCase().includes(w)));
+  const matches = all.slice(0, 30);
+  const choose = (value: string) => { onPick(value); setOpen(false); setQuery(''); setActive(-1); };
+
+  return (
+    <div class="flex gap-2 mb-2">
+      <div class="suggest-wrap flex-1">
+        <input
+          id={id} class="form-input" autocomplete="off" role="combobox" aria-expanded={open} aria-controls={`${id}-list`} aria-autocomplete="list"
+          placeholder="Search products…" value={open ? query : selected}
+          onFocus={() => { setOpen(true); setQuery(''); }}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onInput={(e) => { setQuery((e.target as HTMLInputElement).value); setOpen(true); setActive(-1); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { setOpen(false); return; }
+            if (!open || matches.length === 0) return;
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => (i + 1) % matches.length); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => (i <= 0 ? matches.length - 1 : i - 1)); }
+            else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); choose(String(matches[active]!.id)); }
+          }}
+        />
+        {open && (
+          <ul class="suggest-list" id={`${id}-list`} role="listbox" aria-label="Products">
+            {matches.map((p, index) => (
+              <li key={p.id} role="presentation">
+                <button type="button" class={`suggest-item ${active === index ? 'is-active' : ''}`} role="option" aria-selected={active === index}
+                  onMouseDown={(e) => e.preventDefault()} onClick={() => choose(String(p.id))}>
+                  <span>{p.name}<small>{p.quantity} in stock</small></span>
+                  <span class="suggest-price">{formatInr(p.pricePaise)}</span>
+                </button>
+              </li>
+            ))}
+            {matches.length === 0 && <li class="suggest-group" role="presentation">No matching products</li>}
+            {all.length > matches.length && <li class="suggest-group" role="presentation">{all.length - matches.length} more. Keep typing to narrow down</li>}
+          </ul>
+        )}
+      </div>
+      {canAddNew && <button class="btn btn-secondary btn-sm" type="button" onClick={() => choose(NEW_PRODUCT)}>+ New</button>}
+    </div>
+  );
+}
+
 function TransferForm({ sellerId, direction, onDone, onCancel }: {
   sellerId: number; direction: 'in' | 'out'; onDone: (seller: SellerDTO) => void; onCancel: () => void;
 }) {
@@ -123,11 +174,8 @@ function TransferForm({ sellerId, direction, onDone, onCancel }: {
       {lines.map((l, i) => (
         <div key={i} class="mb-3 pb-3 border-b border-line">
           <label class="form-label" for={`line-product-${i}`}>Product</label>
-          <select id={`line-product-${i}`} class="form-input mb-2" value={l.productId} onChange={(e) => pick(i, (e.target as HTMLSelectElement).value)}>
-            <option value="">Choose…</option>
-            {direction === 'in' && (l.productId === NEW_PRODUCT || !hasNew) && <option value={NEW_PRODUCT}>+ New product (not in my stock)</option>}
-            {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.quantity} in stock)</option>)}
-          </select>
+          <ProductPicker id={`line-product-${i}`} products={products} productId={l.productId}
+            canAddNew={direction === 'in' && (l.productId === NEW_PRODUCT || !hasNew)} onPick={(v) => pick(i, v)} />
           <div class="flex gap-2">
             <div class="flex-1">
               <label class="form-label" for={`line-qty-${i}`}>Quantity</label>

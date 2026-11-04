@@ -86,6 +86,40 @@ async function exportFullInventory() {
     ['SR', 'NAME OF THE PRODUCTS', 'COLOURS', 'SIZE', 'STOCK/SET', 'QTY', 'MRP', 'VALUE', 'SRP', 'VALUE', 'SAVE', 'CP', 'VALUE', 'LOCATION'], rows));
 }
 
+type BackupRow = Record<string, string | number | null>;
+
+async function fetchBackup() {
+  return apiGetJson<{ exportedAt: string; tables: Record<string, BackupRow[]>; columns: Record<string, string[]> }>('/export/all');
+}
+
+const DATASETS: { label: string; table: string }[] = [
+  { label: 'Sales', table: 'sales' },
+  { label: 'Sale items', table: 'sale_items' },
+  { label: 'Sale payments', table: 'sale_payments' },
+  { label: 'Stock movements', table: 'stock_movements' },
+  { label: 'Plans', table: 'plans' },
+  { label: 'Plan deposits', table: 'plan_deposits' },
+  { label: 'Seller transfers', table: 'seller_transfers' },
+  { label: 'Seller transfer items', table: 'seller_transfer_items' },
+  { label: 'Seller payments', table: 'seller_payments' },
+];
+
+const moneyColumn = /_(minor|paise)$/;
+
+async function exportDataset(table: string) {
+  const backup = await fetchBackup();
+  const rows = backup.tables[table] ?? [];
+  const columns = backup.columns[table] ?? Object.keys(rows[0] ?? {});
+  downloadBlob(`${table}-${iso(new Date())}.xlsx`, buildXlsx(table,
+    columns.map((c) => (moneyColumn.test(c) ? c.replace(moneyColumn, '_inr') : c)),
+    rows.map((r) => columns.map((c) => (moneyColumn.test(c) && typeof r[c] === 'number' ? rupeeNumber(r[c] as number) : (r[c] ?? ''))))));
+}
+
+async function exportBackupJson() {
+  const backup = await fetchBackup();
+  downloadBlob(`inventory-backup-${iso(new Date())}.json`, new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
+}
+
 function Delta({ current, previous }: { current: number; previous: number }) {
   if (previous === 0) return <span class="summary-label">{current === 0 ? 'No prior sales' : 'New vs prior period'}</span>;
   const pct = Math.round(((current - previous) / previous) * 100);
@@ -161,6 +195,17 @@ export function ReportsScreen({ onOpenSale }: ReportsScreenProps) {
             <button class="btn btn-secondary btn-sm" type="button" onClick={() => { exportFullInventory().catch((err: Error) => setError(err.message)); }}>Full inventory (Excel)</button>
           </div>
         </div>
+
+        <details class="card">
+          <summary class="font-semibold">Export data</summary>
+          <p class="summary-label">Excel files are readable copies. The JSON backup holds every table in one file for safekeeping; there is no in-app restore yet.</p>
+          <div class="header-actions">
+            {DATASETS.map((d) => (
+              <button key={d.table} class="btn btn-secondary btn-sm" type="button" onClick={() => { exportDataset(d.table).catch((err: Error) => setError(err.message)); }}>{d.label} (Excel)</button>
+            ))}
+            <button class="btn btn-navy btn-sm" type="button" onClick={() => { exportBackupJson().catch((err: Error) => setError(err.message)); }}>Full backup (JSON)</button>
+          </div>
+        </details>
 
         <div class="sales-filter-pills report-pills" role="group" aria-label="Date range">
           {PRESETS.map((p) => (

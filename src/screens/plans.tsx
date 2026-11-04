@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { CreatePlanRequest, PlanDepositRequest, PlanDTO, PlanSummaryDTO } from '../../shared/contracts';
 import { apiGetJson, apiPostJson } from '../api';
-import { formatInr, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type PaymentMethod } from '../domain';
+import { formatInr, planDuePaise, PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type PaymentMethod } from '../domain';
 
 const today = () => {
   const now = new Date();
@@ -20,6 +20,8 @@ export function PlansScreen({ onRedeem, onOpenSale }: PlansScreenProps) {
   const [plans, setPlans] = useState<readonly PlanSummaryDTO[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [copied, setCopied] = useState<number | null>(null);
+  const [fallback, setFallback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -39,6 +41,18 @@ export function PlansScreen({ onRedeem, onOpenSale }: PlansScreenProps) {
   }
 
   const open = plans.filter((p) => p.status === 'open');
+  const due = open.map((p) => ({ plan: p, duePaise: planDuePaise(p) })).filter((d) => d.duePaise > 0);
+  const month = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const copyReminder = async ({ plan, duePaise }: { plan: PlanSummaryDTO; duePaise: number }) => {
+    const text = `Hi ${plan.customerName}, a gentle reminder that ${formatInr(duePaise)} is due on your savings plan for ${month}. Thank you!`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(plan.id);
+    } catch {
+      setError('Could not copy. Select and copy the message below.');
+      setFallback(text);
+    }
+  };
   const held = open.reduce((sum, p) => sum + p.savedPaise, 0);
   return (
     <div class="screen">
@@ -50,6 +64,20 @@ export function PlansScreen({ onRedeem, onOpenSale }: PlansScreenProps) {
         </div>
         <button class="btn btn-primary btn-lg mb-4" type="button" onClick={() => setCreating(true)}>New plan</button>
         {error && <div class="error-message mb-3" role="alert">{error}</div>}
+        {fallback && <textarea class="form-input mb-3" readOnly rows={3} value={fallback} onFocus={(e) => (e.target as HTMLTextAreaElement).select()} aria-label="Reminder message" />}
+        {due.length > 0 && (
+          <div class="card mb-4">
+            <div class="font-semibold mb-2">Due this month ({due.length})</div>
+            {due.map((d) => (
+              <div key={d.plan.id} class="flex justify-between items-center gap-3 mb-2">
+                <span>{d.plan.customerName} · <strong>{formatInr(d.duePaise)}</strong></span>
+                <button class="btn btn-secondary btn-sm" type="button" onClick={() => void copyReminder(d)}>
+                  {copied === d.plan.id ? 'Copied' : 'Copy reminder'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {plans.map((p) => (
           <button key={p.id} type="button" class="card mb-3 w-full text-left" onClick={() => setSelected(p.id)}>
             <div class="flex justify-between">

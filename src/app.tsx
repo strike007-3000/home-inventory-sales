@@ -59,7 +59,10 @@ import {
   LogoutIcon,
   AppLogo,
   PrintIcon,
+  MoonIcon,
+  SunIcon,
 } from './icons';
+import { toggleTheme, useTheme } from './theme';
 import './styles.css';
 import { DashboardScreen } from './screens/dashboard';
 import { LoginScreen } from './screens/login';
@@ -110,6 +113,16 @@ interface NavProps {
   isLoggingOut: boolean;
 }
 
+function ThemeToggle({ class: cls }: { class: string }) {
+  const dark = useTheme() === 'dark';
+  return (
+    <button class={cls} onClick={toggleTheme} type="button" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+      <span class="nav-icon" aria-hidden="true">{dark ? <SunIcon /> : <MoonIcon />}</span>
+      <span class="top-header-logout-text">{dark ? 'Light' : 'Dark'}</span>
+    </button>
+  );
+}
+
 function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
   const navItems: { route: Route; label: string; Icon: () => JSX.Element }[] = [
     { route: 'home', label: 'Home', Icon: HomeIcon },
@@ -147,6 +160,7 @@ function Nav({ currentRoute, onNavigate, onLogout, isLoggingOut }: NavProps) {
           </button>
         ))}
       </div>
+      <ThemeToggle class="nav-item nav-theme" />
       <button class="nav-item nav-logout" onClick={() => void onLogout()} disabled={isLoggingOut} type="button">
         <span class="nav-icon" aria-hidden="true"><LogoutIcon /></span>
         <span>{isLoggingOut ? 'Signing out…' : 'Logout'}</span>
@@ -2433,6 +2447,8 @@ export function App() {
             <AppLogo />
             <span>Home Inventory</span>
           </div>
+          <div class="top-header-actions">
+          <ThemeToggle class="btn btn-ghost btn-sm top-header-theme" />
           <button
             class="btn btn-ghost btn-sm top-header-logout"
             onClick={() => void handleLogout()}
@@ -2443,6 +2459,7 @@ export function App() {
             <LogoutIcon />
             <span class="top-header-logout-text">{isLoggingOut ? 'Signing out…' : 'Logout'}</span>
           </button>
+          </div>
         </div>
       </div>
       {!online && <div class="offline-banner" role="status">You're offline. Saving is paused until you reconnect.</div>}

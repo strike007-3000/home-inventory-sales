@@ -232,6 +232,21 @@ export function getTimestampKolkata(): string {
  * Format paise as INR with Indian number grouping.
  * ₹499 for whole rupees, ₹499.50 for amounts with paise.
  */
+/**
+ * What an open savings plan is behind by: installments due from its start month through the
+ * current month (capped at its length), minus what the customer has saved.
+ */
+export function planDuePaise(
+  plan: { monthlyPaise: number; startDate: string; months: number | null; savedPaise: number; status: string },
+  now: Date = new Date(),
+): number {
+  if (plan.status !== 'open') return 0;
+  const sy = Number(plan.startDate.slice(0, 4)), sm = Number(plan.startDate.slice(5, 7));
+  let installments = (now.getFullYear() - sy) * 12 + (now.getMonth() + 1 - sm) + 1;
+  if (plan.months) installments = Math.min(installments, plan.months);
+  return Math.max(0, plan.monthlyPaise * Math.max(0, installments) - plan.savedPaise);
+}
+
 export function formatInr(paise: number): string {
   const rupees = paise / 100;
   // Use 2 decimal places if there are paise, 0 if whole rupees
