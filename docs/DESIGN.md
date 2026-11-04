@@ -132,6 +132,10 @@ The palette is cool, restrained, and functional: blue directs action, while gree
 - **Warning Amber / Soft Warning:** Low-stock guidance and cautionary status.
 - **Danger Red / Soft Danger:** Destructive actions, errors, and out-of-stock states.
 
+### Dark theme
+
+Dark mode is a second set of the same CSS variables under `:root[data-theme="dark"]` in `src/styles.css`; components never hardcode colours, so they follow automatically. `index.html` sets `data-theme` before first paint from `localStorage.theme`, falling back to the system setting. The toggle (`src/theme.ts`) is two-way and sits in the top header on phones and above Logout in the desktop rail. In dark, blue and status colours are lightened for contrast, soft tints become deep low-chroma fills, and shadows are darker. Print layouts always stay light. New colours must be added as a variable pair (light and dark), not as literals.
+
 **The One Blue Rule.** Blue is the sole general-purpose accent. Green, amber, and red communicate status only; they never compete for routine action hierarchy.
 
 **The White Is a Surface Rule.** The cool canvas frames the application; white marks an interactive or contained working surface rather than becoming an ornamental tile mosaic.

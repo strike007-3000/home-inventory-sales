@@ -22,6 +22,9 @@ A private, touch-friendly inventory and sales application for a small home busin
 - Clean navigation shell with refreshed SVG line icons, application logo icon (`AppLogo`), top-right mobile logout, and desktop sidebar footer logout
 - Shared-password authentication with signed cookies and CSRF protection
 - Responsive desktop, phone, iPad, and print layout styles with parent-friendly high-contrast indicators and stacked mobile page headers
+- Light/dark theme with a two-way toggle; follows the system setting until the user chooses
+- Excel exports per dataset (sales, sale items, payments, stock movements, plans, seller ledger) and a full JSON backup from Reports
+- Savings plans with a "Due this month" list and copyable reminder messages
 - Automatic production builds and deployments from GitHub `main`
 - Dependabot version checks for npm dependencies twice monthly, on the 1st and 16th, alongside vulnerability alerts and security-update pull requests
 
@@ -72,10 +75,11 @@ Local-only business files belong under `.private/`, which is ignored by Git. Pro
 - [Contributing and local development](docs/CONTRIBUTING.md)
 - [Security](docs/SECURITY.md)
 - [Design system](docs/DESIGN.md)
+- [Changelog](CHANGELOG.md)
 
 ## Known gaps
 
-- User-facing export/restore is not implemented yet.
+- Data can be exported (Excel per dataset, full JSON), but there is no in-app restore.
 - There is one shared application password rather than individual accounts or roles.
 - Product CSV import remains server-side legacy code; its UI has been intentionally removed.
 - Returns are handled by cancellation/correction workflows rather than a dedicated partial-return feature.

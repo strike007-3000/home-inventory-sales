@@ -97,7 +97,7 @@ npx wrangler d1 migrations list YOUR_D1_DATABASE --remote
 
 ## Backup and recovery
 
-Cloudflare D1 is the production system of record. User-facing export/restore is not implemented yet, so operational backup and restoration procedures remain a known gap. Do not describe committed migrations as a backup of business data: they restore schema only.
+Cloudflare D1 is the production system of record. Reports → Export data downloads a full JSON backup (`GET /api/export/all`, every business table; `login_attempts` and `import_staging` are excluded) and per-dataset Excel files. There is no in-app restore, so recovery from a JSON backup is a manual, scripted import into D1 and remains a known gap. Download a backup before risky migrations or bulk edits. Do not describe committed migrations as a backup of business data: they restore schema only.
 
 ## Product consolidation
 
