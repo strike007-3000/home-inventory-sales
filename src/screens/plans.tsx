@@ -21,6 +21,7 @@ export function PlansScreen({ onRedeem, onOpenSale }: PlansScreenProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState<number | null>(null);
+  const [fallback, setFallback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -48,7 +49,8 @@ export function PlansScreen({ onRedeem, onOpenSale }: PlansScreenProps) {
       await navigator.clipboard.writeText(text);
       setCopied(plan.id);
     } catch {
-      setError('Could not copy. Select and copy the message manually.');
+      setError('Could not copy. Select and copy the message below.');
+      setFallback(text);
     }
   };
   const held = open.reduce((sum, p) => sum + p.savedPaise, 0);
@@ -62,6 +64,7 @@ export function PlansScreen({ onRedeem, onOpenSale }: PlansScreenProps) {
         </div>
         <button class="btn btn-primary btn-lg mb-4" type="button" onClick={() => setCreating(true)}>New plan</button>
         {error && <div class="error-message mb-3" role="alert">{error}</div>}
+        {fallback && <textarea class="form-input mb-3" readOnly rows={3} value={fallback} onFocus={(e) => (e.target as HTMLTextAreaElement).select()} aria-label="Reminder message" />}
         {due.length > 0 && (
           <div class="card mb-4">
             <div class="font-semibold mb-2">Due this month ({due.length})</div>

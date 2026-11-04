@@ -89,7 +89,7 @@ async function exportFullInventory() {
 type BackupRow = Record<string, string | number | null>;
 
 async function fetchBackup() {
-  return apiGetJson<{ exportedAt: string; tables: Record<string, BackupRow[]> }>('/export/all');
+  return apiGetJson<{ exportedAt: string; tables: Record<string, BackupRow[]>; columns: Record<string, string[]> }>('/export/all');
 }
 
 const DATASETS: { label: string; table: string }[] = [
@@ -100,14 +100,16 @@ const DATASETS: { label: string; table: string }[] = [
   { label: 'Plans', table: 'plans' },
   { label: 'Plan deposits', table: 'plan_deposits' },
   { label: 'Seller transfers', table: 'seller_transfers' },
+  { label: 'Seller transfer items', table: 'seller_transfer_items' },
   { label: 'Seller payments', table: 'seller_payments' },
 ];
 
 const moneyColumn = /_(minor|paise)$/;
 
 async function exportDataset(table: string) {
-  const rows = (await fetchBackup()).tables[table] ?? [];
-  const columns = Object.keys(rows[0] ?? {});
+  const backup = await fetchBackup();
+  const rows = backup.tables[table] ?? [];
+  const columns = backup.columns[table] ?? Object.keys(rows[0] ?? {});
   downloadBlob(`${table}-${iso(new Date())}.xlsx`, buildXlsx(table,
     columns.map((c) => (moneyColumn.test(c) ? c.replace(moneyColumn, '_inr') : c)),
     rows.map((r) => columns.map((c) => (moneyColumn.test(c) && typeof r[c] === 'number' ? rupeeNumber(r[c] as number) : (r[c] ?? ''))))));

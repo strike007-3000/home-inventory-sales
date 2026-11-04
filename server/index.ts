@@ -341,5 +341,8 @@ const BACKUP_TABLES = [
 async function handleExportAll(env: Env): Promise<Response> {
   const results = await env.DB.batch(BACKUP_TABLES.map((t) => env.DB.prepare(`SELECT * FROM ${t}`)));
   const tables = Object.fromEntries(BACKUP_TABLES.map((t, i) => [t, results[i]?.results ?? []]));
-  return jsonResponse({ exportedAt: new Date().toISOString(), tables });
+  // Column names travel with the data so empty tables still export a header row.
+  const info = await env.DB.batch(BACKUP_TABLES.map((t) => env.DB.prepare(`SELECT name FROM pragma_table_info('${t}')`)));
+  const columns = Object.fromEntries(BACKUP_TABLES.map((t, i) => [t, (info[i]?.results ?? []).map((r) => (r as { name: string }).name)]));
+  return jsonResponse({ exportedAt: new Date().toISOString(), tables, columns });
 }
