@@ -172,7 +172,7 @@ export function ProductList({ initialActiveFilter = 'active', selectedProductId,
     onLidDraftUsed?.();
   }, [lidDraft]);
   const [toast, setToast] = useState<string | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const showToast = (message: string) => {
     setToast(message);
     clearTimeout(toastTimer.current);

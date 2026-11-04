@@ -70,7 +70,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
               <div class="password-input-wrapper">
                 <input
                   id="password"
-                  type={showPassword ? 'text' : 'password'}
+                  type={(showPassword ? 'text' : 'password') as 'text'} // preact 11 typings reject the union
                   class="form-input"
                   value={password}
                   onInput={(e) => setPassword((e.target as HTMLInputElement).value)}

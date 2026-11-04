@@ -6,3 +6,7 @@ updates:
       interval: cron
       cronjob: "0 9 1,16 * *"
       timezone: Europe/Brussels
+    ignore:
+      # @cloudflare/vitest-pool-workers peers vitest ^4; v5 breaks `npm ci`. Remove once it supports 5.
+      - dependency-name: vitest
+        update-types: ["version-update:semver-major"]
