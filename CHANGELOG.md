@@ -5,7 +5,7 @@ Versions follow [SemVer](https://semver.org/) while pre-1.0: new features bump t
 ## Unreleased
 
 ### Changed
-- Sale details: "Print / Save PDF" is now "Save PDF". It builds an A4 invoice PDF in the app (`Invoice.pdf`) instead of using the browser print dialog, so no browser URL footer is added (notably on iPhone Safari). The ₹ symbol is drawn as vector strokes because the built-in PDF font has no ₹ glyph.
+- Sale details: "Print / Save PDF" is now "Save PDF". It builds an A4 invoice PDF in the app (`Invoice.pdf`) instead of using the browser print dialog, so no browser URL footer is added (notably on iPhone Safari). The invoice shows the seller ("Neeta Gore", the `SELLER` constant in `src/invoice-pdf.ts`), a status pill, and the app's blue. The ₹ symbol is drawn as vector strokes because the built-in PDF font has no ₹ glyph.
 - Plans: the copied reminder now reads "Hello <first name> a gentle reminder that ₹<amount> is due on your Tupperware kitty for <month> <year>. Thank you!"
 
 ### Added

@@ -2,11 +2,14 @@ import { jsPDF } from 'jspdf';
 import { formatInr, PAYMENT_METHOD_LABELS, type PaymentMethod, type SaleRecord } from './domain';
 
 // Type scale (pt): title, emphasis, body, label.
-const T = 26, E = 12, B = 10, L = 8;
+const T = 26, E = 12, B = 11, L = 8;
+
+const SELLER = 'Neeta Gore'; // no business name; add a phone number here if wanted
 
 // Colours match the app's tokens (src/styles.css): --ink, --blue, --blue-soft, --line.
 const INK: [number, number, number] = [23, 25, 29];
 const BLUE: [number, number, number] = [20, 104, 232];
+const BLUE_DARK: [number, number, number] = [14, 86, 195]; // --blue-dark: 4.5:1+ for small text
 const BLUE_SOFT: [number, number, number] = [234, 242, 255];
 const MUTED: [number, number, number] = [110, 117, 128];
 
@@ -25,7 +28,7 @@ export function buildInvoicePdf(sale: SaleRecord): jsPDF {
 
   const text = (s: string, x: number, size: number, opts: { bold?: boolean | undefined; align?: 'left' | 'right'; gray?: boolean; blue?: boolean } = {}) => {
     doc.setFont('helvetica', opts.bold ? 'bold' : 'normal').setFontSize(size);
-    doc.setTextColor(...(opts.blue ? BLUE : opts.gray ? MUTED : INK));
+    doc.setTextColor(...(opts.blue ? BLUE_DARK : opts.gray ? MUTED : INK));
     doc.text(s, x, y, { align: opts.align ?? 'left' });
   };
   const rule = (color = 227) => { doc.setDrawColor(color, color + 3, color + 7).setLineWidth(0.2).line(M, y, RIGHT, y); };
@@ -64,51 +67,64 @@ export function buildInvoicePdf(sale: SaleRecord): jsPDF {
   y += 6;
   text(`Date: ${dateOf(`${sale.saleDate ?? sale.soldAt.slice(0, 10)}T00:00:00`)}`, RIGHT, B, { align: 'right', gray: true });
   y += 6;
-  text(status, RIGHT, B, { bold: true, align: 'right' });
+  // Status as a coloured pill so it scans at a glance.
+  const pill: Record<string, [[number, number, number], [number, number, number]]> = {
+    PAID: [[220, 245, 229], [22, 101, 52]],
+    'PARTIALLY PAID': [[254, 243, 199], [146, 64, 14]],
+    UNPAID: [[254, 243, 199], [146, 64, 14]],
+    CANCELLED: [[254, 226, 226], [153, 27, 27]],
+    GIFT: [BLUE_SOFT, BLUE_DARK],
+  };
+  const [pillBg, pillFg] = pill[status]!;
+  doc.setFont('helvetica', 'bold').setFontSize(L);
+  const pw = doc.getTextWidth(status) + 7;
+  doc.setFillColor(...pillBg).roundedRect(RIGHT - pw, y - 4.4, pw, 6.4, 3.2, 3.2, 'F');
+  doc.setTextColor(...pillFg).text(status, RIGHT - pw / 2, y, { align: 'center' });
   y += 8;
   doc.setDrawColor(...BLUE).setLineWidth(0.8).line(M, y, RIGHT, y);
   y += 8;
 
-  if (sale.customerName) {
-    text(gift ? 'GIFTED TO' : 'BILLED TO', M, L, { bold: true, gray: true });
-    y += 5.5;
-    text(sale.customerName, M, E, { bold: true });
-    y += 9;
-  }
+  const toX = 110;
+  text('FROM', M, L, { bold: true, gray: true });
+  if (sale.customerName) text(gift ? 'GIFTED TO' : 'BILLED TO', toX, L, { bold: true, gray: true });
+  y += 6;
+  text(SELLER, M, E, { bold: true });
+  if (sale.customerName) text(sale.customerName, toX, E, { bold: true });
+  y += 11;
 
   // Items table.
   const cols = gift
     ? { name: M + 2, qty: RIGHT - 2 }
     : { name: M + 2, qty: 118, rate: 152, amount: RIGHT - 2 };
   const header = () => {
-    doc.setFillColor(...BLUE_SOFT).rect(M, y, RIGHT - M, 9, 'F');
-    y += 6;
+    doc.setFillColor(...BLUE_SOFT).rect(M, y, RIGHT - M, 10, 'F');
+    y += 6.5;
     text('ITEM', cols.name, L, { bold: true, blue: true });
     text('QTY', cols.qty, L, { bold: true, align: 'right', blue: true });
     if (!gift) {
       text('RATE', cols.rate!, L, { bold: true, align: 'right', blue: true });
       text('AMOUNT', cols.amount!, L, { bold: true, align: 'right', blue: true });
     }
-    y += 6;
+    y += 6.5;
   };
   header();
   const nameWidth = (gift ? cols.qty - 20 : cols.qty - 26) - cols.name;
   for (const line of sale.lines) {
     const nameLines: string[] = doc.setFont('helvetica', 'normal').setFontSize(B).splitTextToSize(line.productName, nameWidth);
-    const rowH = nameLines.length * 5 + 4;
+    const rowH = nameLines.length * 5.6 + 7;
     if (y + rowH > PAGE_H - 50) {
       doc.addPage();
       y = M;
       header();
     }
-    y += 5;
+    y += 6.5;
     doc.setFont('helvetica', 'normal').setFontSize(B).setTextColor(...INK).text(nameLines, cols.name, y);
     text(String(line.quantity), cols.qty, B, { align: 'right' });
     if (!gift) {
       amount(line.unitPricePaise, cols.rate!, B, { align: 'right' });
       amount(line.lineTotalPaise, cols.amount!, B, { bold: true, align: 'right' });
     }
-    y += rowH - 5;
+    y += rowH - 6.5;
     rule(232);
   }
   y += 8;
@@ -127,9 +143,9 @@ export function buildInvoicePdf(sale: SaleRecord): jsPDF {
     if (y > PAGE_H - 70) { doc.addPage(); y = M; }
     row('Subtotal', sale.subtotalPaise);
     if (sale.discountPaise > 0) row('Discount', sale.discountPaise, { prefix: '-' });
-    doc.setDrawColor(...INK).setLineWidth(0.4).line(128, y - 2, RIGHT, y - 2);
-    y += 3;
     const paid = sale.paymentStatus === 'paid';
+    if (!paid) doc.setDrawColor(...INK).setLineWidth(0.4).line(128, y - 2, RIGHT, y - 2);
+    y += 3;
     if (paid) doc.setFillColor(...BLUE_SOFT).rect(124, y - 6, RIGHT - 124, 10, 'F'); // highlight the final figure
     row(paid ? 'Total paid' : 'Total', sale.totalPaise, { bold: true, size: E });
     if (sale.paymentStatus !== 'paid') {
