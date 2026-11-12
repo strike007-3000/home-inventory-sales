@@ -14,7 +14,7 @@ A private, touch-friendly inventory and sales application for a small home busin
 - Draft-safe sale flow with Back to items and explicit Discard sale actions
 - Searchable sales history with instant horizontal payment-status filter pills (`All sales`, `Gifts`, `Paid`, `Unpaid`, `Partial`, `Cancelled`) and status chips (`Paid`, `Partially paid`, `Unpaid`, `Gift`, `Cancelled`)
 - Per-payment method editing on Sale Details (`PUT /api/sales/:saleId/payments/:paymentId`) with audit history tracking (`sale_payment_corrections`)
-- In-app invoice PDF (`Save PDF`, downloads `Invoice.pdf`) for ordinary, gift and cancelled sales, built with `jspdf`
+- In-app invoice PDF (`Save PDF`, downloads `Invoice.pdf`) for ordinary, gift and cancelled sales, built with `jspdf`. Shows the seller name and phone, a status pill, and a UPI payment QR (amount pre-filled) when a balance is due. Seller details are constants in `src/invoice-pdf.ts`
 - Unified 50/50 side-by-side search bars with Deep Midnight Navy Blue (`#0f2b5c`) search buttons across Sales, Products, and LIDS
 - Separate LIDS market-price lookup that never participates in inventory stock
 - Dashboard attention items with direct product navigation, auto-scrolling, neutral "Opened from Home" product badges, and quiet fallback notice on refresh failure

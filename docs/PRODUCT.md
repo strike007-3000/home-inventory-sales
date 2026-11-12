@@ -34,7 +34,7 @@ Home Inventory helps one or two family members run a small home inventory busine
 7. Correct individual payment methods independently (`PUT /api/sales/:saleId/payments/:paymentId`) with audit records saved in `sale_payment_corrections`.
 8. Leave a sale unpaid or partially paid and record later payments.
 9. Search older sales and cancel an incorrect sale, reversing stock (including gift sales).
-10. Save an invoice PDF (`Invoice.pdf`) from any sale details page, with clean layouts for ordinary, gift and cancelled sales.
+10. Save an invoice PDF (`Invoice.pdf`) from any sale details page, with clean layouts for ordinary, gift and cancelled sales. It carries the seller's name and phone, and a UPI QR for the balance due on unpaid or partly paid sales so the customer can pay straight from the invoice.
 11. Look up LIDS market prices separately.
 
 ## Product principles
