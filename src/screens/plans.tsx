@@ -44,7 +44,7 @@ export function PlansScreen({ onRedeem, onOpenSale }: PlansScreenProps) {
   const due = open.map((p) => ({ plan: p, duePaise: planDuePaise(p) })).filter((d) => d.duePaise > 0);
   const month = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
   const copyReminder = async ({ plan, duePaise }: { plan: PlanSummaryDTO; duePaise: number }) => {
-    const text = `Hello ${plan.customerName.trim().split(/\s+/)[0]} a gentle reminder that ${formatInr(duePaise)} is due on your Tupperware kitty for ${month}. Thank you!`;
+    const text = `Hello ${plan.customerName.trim().split(/\s+/)[0]}, just a gentle reminder that your Tupperware kitty payment of ${formatInr(duePaise)} for ${month} is due. Thank you!`;
     try {
       await navigator.clipboard.writeText(text);
       setCopied(plan.id);
