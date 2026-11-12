@@ -1882,8 +1882,10 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate,
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    // Generated in-app (not window.print) so browsers can't add a URL footer; loaded lazily to keep it out of the main bundle.
+    const { buildInvoicePdf } = await import('./invoice-pdf');
+    buildInvoicePdf(sale).save('Invoice.pdf');
   };
 
   return (
@@ -1893,8 +1895,8 @@ function ViewSaleScreen({ state, lastCompletedSaleId, onStateChange, onNavigate,
           <button class="btn btn-ghost btn-sm" onClick={() => onNavigate(backRoute)} type="button">
             <ChevronLeftIcon /> {backRoute === 'sales' ? 'Back to sales' : 'Back'}
           </button>
-          <button class="btn btn-secondary btn-sm" onClick={handlePrint} type="button">
-            <PrintIcon /> Print / Save PDF
+          <button class="btn btn-secondary btn-sm" onClick={() => void handlePrint()} type="button">
+            <PrintIcon /> Save PDF
           </button>
         </div>
 
