@@ -5,6 +5,7 @@ Versions follow [SemVer](https://semver.org/) while pre-1.0: new features bump t
 ## Unreleased
 
 ### Changed
+- Invoice PDF: the invoice number reads `INV-<year>-<sequence>` (e.g. `INV-2026-0042`), derived from the sale date and sale id. The on-screen receipt and search still use the stored `SALE-…` number.
 - Invoice PDF: removed the Rate column; items show name, quantity and amount.
 - Sale details: "Print / Save PDF" is now "Save PDF". It builds an A4 invoice PDF in the app (`Invoice.pdf`) instead of using the browser print dialog, so no browser URL footer is added (notably on iPhone Safari). The invoice shows the seller ("Neeta Gore", the `SELLER` constant in `src/invoice-pdf.ts`), a status pill, and the app's blue. The ₹ symbol is drawn as vector strokes because the built-in PDF font has no ₹ glyph.
 - Plans: the copied reminder now reads "Hello <first name>, just a gentle reminder that your Tupperware kitty payment of ₹<amount> for <month> <year> is due. Thank you!"

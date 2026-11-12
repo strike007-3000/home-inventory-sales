@@ -66,7 +66,9 @@ export function buildInvoicePdf(sale: SaleRecord): jsPDF {
   // Header: title on the left, invoice meta on the right.
   text('INVOICE', M, T, { bold: true, blue: true });
   const status = sale.status === 'cancelled' ? 'CANCELLED' : gift ? 'GIFT' : sale.paymentStatus === 'paid' ? 'PAID' : sale.paymentStatus === 'partial' ? 'PARTIALLY PAID' : 'UNPAID';
-  text(`Invoice no. ${sale.saleNumber}`, RIGHT, E, { bold: true, align: 'right' });
+  // Display-only: stored sale numbers are random (SALE-yyyymmdd-XXXXXXXX); the id is sequential.
+  const saleYear = (sale.saleDate ?? sale.soldAt).slice(0, 4);
+  text(`Invoice no. INV-${saleYear}-${String(sale.id).padStart(4, '0')}`, RIGHT, E, { bold: true, align: 'right' });
   y += 6;
   text(`Date: ${dateOf(`${sale.saleDate ?? sale.soldAt.slice(0, 10)}T00:00:00`)}`, RIGHT, B, { align: 'right', gray: true });
   y += 6;
