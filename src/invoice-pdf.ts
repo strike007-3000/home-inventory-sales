@@ -107,14 +107,13 @@ export function buildInvoicePdf(sale: SaleRecord): jsPDF {
   // Items table.
   const cols = gift
     ? { name: M + 2, qty: RIGHT - 2 }
-    : { name: M + 2, qty: 118, rate: 152, amount: RIGHT - 2 };
+    : { name: M + 2, qty: 148, amount: RIGHT - 2 };
   const header = () => {
     doc.setFillColor(...BLUE_SOFT).rect(M, y, RIGHT - M, 10, 'F');
     y += 6.5;
     text('ITEM', cols.name, L, { bold: true, blue: true });
     text('QTY', cols.qty, L, { bold: true, align: 'right', blue: true });
     if (!gift) {
-      text('RATE', cols.rate!, L, { bold: true, align: 'right', blue: true });
       text('AMOUNT', cols.amount!, L, { bold: true, align: 'right', blue: true });
     }
     y += 6.5;
@@ -133,7 +132,6 @@ export function buildInvoicePdf(sale: SaleRecord): jsPDF {
     doc.setFont('helvetica', 'normal').setFontSize(B).setTextColor(...INK).text(nameLines, cols.name, y);
     text(String(line.quantity), cols.qty, B, { align: 'right' });
     if (!gift) {
-      amount(line.unitPricePaise, cols.rate!, B, { align: 'right' });
       amount(line.lineTotalPaise, cols.amount!, B, { bold: true, align: 'right' });
     }
     y += rowH - 6.5;
