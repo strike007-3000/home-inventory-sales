@@ -2,6 +2,15 @@
 
 Versions follow [SemVer](https://semver.org/) while pre-1.0: new features bump the minor version, fixes bump the patch.
 
+## Unreleased
+
+### Changed
+- Sale details: "Print / Save PDF" is now "Save PDF". It builds an A4 invoice PDF in the app (`Invoice.pdf`) instead of using the browser print dialog, so no browser URL footer is added (notably on iPhone Safari). Amounts in the PDF read "Rs." because the built-in PDF font has no ₹ glyph.
+- Plans: the copied reminder now reads "Hello <first name> a gentle reminder that ₹<amount> is due on your Tupperware kitty for <month> <year>. Thank you!"
+
+### Added
+- Dependency: `jspdf` (loaded only when saving a PDF).
+
 ## 0.1.0
 
 ### Added
