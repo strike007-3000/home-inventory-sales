@@ -9,7 +9,8 @@ Versions follow [SemVer](https://semver.org/) while pre-1.0: new features bump t
 - Plans: the copied reminder now reads "Hello <first name> a gentle reminder that ₹<amount> is due on your Tupperware kitty for <month> <year>. Thank you!"
 
 ### Added
-- Dependency: `jspdf` (loaded only when saving a PDF).
+- Invoice PDF: seller phone number and a UPI QR code for the balance due (amount pre-filled; shown only on completed sales with a balance). Seller name, phone and UPI ID are constants at the top of `src/invoice-pdf.ts`.
+- Dependencies: `jspdf` (loaded only when saving a PDF) and `qrcode-generator` (same chunk).
 
 ## 0.1.0
 

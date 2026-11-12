@@ -1,10 +1,13 @@
 import { jsPDF } from 'jspdf';
+import qrcode from 'qrcode-generator';
 import { formatInr, PAYMENT_METHOD_LABELS, type PaymentMethod, type SaleRecord } from './domain';
 
 // Type scale (pt): title, emphasis, body, label.
 const T = 26, E = 12, B = 11, L = 8;
 
-const SELLER = 'Neeta Gore'; // no business name; add a phone number here if wanted
+const SELLER = 'Neeta Gore'; // no business name
+const PHONE = '+91 99872 73980';
+const UPI_ID = 'neetapgore@okaxis';
 
 // Colours match the app's tokens (src/styles.css): --ink, --blue, --blue-soft, --line.
 const INK: [number, number, number] = [23, 25, 29];
@@ -89,8 +92,11 @@ export function buildInvoicePdf(sale: SaleRecord): jsPDF {
   if (sale.customerName) text(gift ? 'GIFTED TO' : 'BILLED TO', toX, L, { bold: true, gray: true });
   y += 6;
   text(SELLER, M, E, { bold: true });
+  y += 5.5;
+  text(PHONE, M, B, { gray: true });
+  y -= 5.5;
   if (sale.customerName) text(sale.customerName, toX, E, { bold: true });
-  y += 11;
+  y += 15;
 
   // Items table.
   const cols = gift
@@ -141,6 +147,7 @@ export function buildInvoicePdf(sale: SaleRecord): jsPDF {
     y += 8;
   } else {
     if (y > PAGE_H - 70) { doc.addPage(); y = M; }
+    const totalsTop = y;
     row('Subtotal', sale.subtotalPaise);
     if (sale.discountPaise > 0) row('Discount', sale.discountPaise, { prefix: '-' });
     const paid = sale.paymentStatus === 'paid';
@@ -155,6 +162,24 @@ export function buildInvoicePdf(sale: SaleRecord): jsPDF {
       row('Balance due', sale.balancePaise ?? 0, { bold: true, size: E });
     }
     y += 4;
+
+    // UPI QR for the balance due, left of the totals. The amount is pre-filled in the payment link.
+    const due = sale.balancePaise ?? 0;
+    if (sale.status === 'completed' && due > 0) {
+      const qr = qrcode(0, 'M');
+      qr.addData(`upi://pay?pa=${UPI_ID}&pn=${encodeURIComponent(SELLER)}&am=${(due / 100).toFixed(2)}&cu=INR`);
+      qr.make();
+      const n = qr.getModuleCount();
+      const size = 34, cell = size / n, qx = M, qy = totalsTop + 1;
+      doc.setFillColor(...INK);
+      for (let row = 0; row < n; row++) for (let col = 0; col < n; col++) if (qr.isDark(row, col)) doc.rect(qx + col * cell, qy + row * cell, cell + 0.02, cell + 0.02, 'F');
+      const ly = y;
+      y = qy + size + 5;
+      text('Scan to pay with any UPI app', qx, L, { bold: true, blue: true });
+      y += 4;
+      text(`UPI ID: ${UPI_ID}`, qx, L, { gray: true });
+      y = Math.max(ly, y + 6);
+    }
 
     if (sale.payments?.length) {
       if (y > PAGE_H - 50) { doc.addPage(); y = M; }
