@@ -95,8 +95,14 @@ export function buildInvoicePdf(sale: SaleRecord): jsPDF {
   y += 5.5;
   text(PHONE, M, B, { gray: true });
   y -= 5.5;
-  if (sale.customerName) text(sale.customerName, toX, E, { bold: true });
-  y += 15;
+  let extra = 0;
+  if (sale.customerName) {
+    // Names can be up to 200 chars: wrap to the billed-to column and push the layout down for extra lines.
+    const nameLines: string[] = doc.setFont('helvetica', 'bold').setFontSize(E).splitTextToSize(sale.customerName, RIGHT - toX);
+    doc.setTextColor(...INK).text(nameLines, toX, y);
+    extra = Math.max(0, nameLines.length - 2) * 5.5;
+  }
+  y += 15 + extra;
 
   // Items table.
   const cols = gift
